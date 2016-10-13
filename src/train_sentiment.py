@@ -72,18 +72,18 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
 #     sent_embeddings=T.max(masked_conv_output, axis=2) #(batch_size, hidden_size)
     
     #GRU
-    U1, W1, b1=create_GRU_para(rng, emb_size, hidden_size)
-    NN_para=[U1, W1, b1]
-    gru_input = common_input.dimshuffle((0,2,1))
-    gru_layer=GRU_Batch_Tensor_Input_with_Mask(gru_input, sents_mask,  hidden_size, U1, W1, b1)
-    sent_embeddings=gru_layer.output_sent_rep  # (batch_size, hidden_size)
+#     U1, W1, b1=create_GRU_para(rng, emb_size, hidden_size)
+#     NN_para=[U1, W1, b1]
+#     gru_input = common_input.dimshuffle((0,2,1))
+#     gru_layer=GRU_Batch_Tensor_Input_with_Mask(gru_input, sents_mask,  hidden_size, U1, W1, b1)
+#     sent_embeddings=gru_layer.output_sent_rep  # (batch_size, hidden_size)
 
     #LSTM
-#     LSTM_para_dict=create_LSTM_para(rng, emb_size, hidden_size)
-#     NN_para=LSTM_para_dict.values()
-#     lstm_input = common_input.dimshuffle((0,2,1))
-#     lstm_layer=LSTM_Batch_Tensor_Input_with_Mask(lstm_input, sents_mask,  hidden_size, LSTM_para_dict)
-#     sent_embeddings=lstm_layer.output_sent_rep  # (batch_size, hidden_size)    
+    LSTM_para_dict=create_LSTM_para(rng, emb_size, hidden_size)
+    NN_para=LSTM_para_dict.values()
+    lstm_input = common_input.dimshuffle((0,2,1))
+    lstm_layer=LSTM_Batch_Tensor_Input_with_Mask(lstm_input, sents_mask,  hidden_size, LSTM_para_dict)
+    sent_embeddings=lstm_layer.output_sent_rep  # (batch_size, hidden_size)    
     #classification layer
     U_a = create_ensemble_para(rng, 2, hidden_size) # 3 extra features
     LR_b = theano.shared(value=np.zeros((2,),dtype=theano.config.floatX),name='LR_b', borrow=True)    

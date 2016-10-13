@@ -78,12 +78,12 @@ def create_LSTM_para(rng, word_dim, hidden_dim):
     params={}
     #W play with input dimension
     W = rng.normal(0.0, 0.01, (word_dim, 4*hidden_dim))
-    params['W'] = W
+    params['W'] = theano.shared(name='W', value=W.astype(theano.config.floatX), borrow=True)
     #U play with hidden states
     U = rng.normal(0.0, 0.01, (hidden_dim, 4*hidden_dim))
-    params['U'] = U
+    params['U'] = theano.shared(name='U', value=U.astype(theano.config.floatX), borrow=True)
     b = numpy.zeros((4 * hidden_dim,))
-    params['b'] = b.astype(theano.config.floatX)
+    params['b'] = theano.shared(name='b', value=b.astype(theano.config.floatX), borrow=True)
 
     return params
 
