@@ -16,7 +16,7 @@ from theano.tensor.signal import downsample
 from random import shuffle
 
 from load_data import load_sentiment_dataset, load_word2vec, load_word2vec_to_init
-from common_functions import create_conv_para, Conv_with_input_para, create_ensemble_para, L2norm_paraList, Diversify_Reg
+from common_functions import create_conv_para, Conv_with_input_para, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
 def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0.001, emb_size=100, hidden_size=300, batch_size=50, filter_size=3, maxSentLen=60):
     
     rng = np.random.RandomState(1234)
@@ -54,30 +54,36 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     ######################
     print '... building the model'    
     
-    sents_input = embeddings[sents_id_matrix.flatten()].reshape((batch_size,maxSentLen, emb_size)).dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
+    common_input=embeddings[sents_id_matrix.flatten()].reshape((batch_size,maxSentLen, emb_size))
     
-    conv_W, conv_b=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, filter_size))
-    conv_W_into_matrix=conv_W.reshape((conv_W.shape[0], conv_W.shape[2]*conv_W.shape[3]))
-    conv_para=[conv_W, conv_b]
-    conv_model = Conv_with_input_para(rng, input=sents_input,
-            image_shape=(batch_size, 1, emb_size, maxSentLen),
-            filter_shape=(hidden_size, 1, emb_size, filter_size), W=conv_W, b=conv_b)
-    conv_output=conv_model.narrow_conv_out #(batch, 1, hidden_size, maxparalen-filter_size+1)    
-    conv_output_into_tensor3=conv_output.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
     
-#     sents_mask_int=T.gt(sents_mask, 0.0)
-#     def step_max_pooling(matrix, valid_cols):
-#         valid_matrix=matrix[:,(maxSentLen-valid_cols):]
-#         return T.max(valid_matrix, axis=1)
-#     
-#     sent_embeddings, _ = theano.scan(fn=step_max_pooling,
-#                             sequences=[conv_output_into_tensor3, T.sum(sents_mask_int, axis=1)])      
+    #conv
+#     conv_input = common_input.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
+#     conv_W, conv_b=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, filter_size))
+#     conv_W_into_matrix=conv_W.reshape((conv_W.shape[0], conv_W.shape[2]*conv_W.shape[3]))
+#     NN_para=[conv_W, conv_b]
+#     conv_model = Conv_with_input_para(rng, input=conv_input,
+#             image_shape=(batch_size, 1, emb_size, maxSentLen),
+#             filter_shape=(hidden_size, 1, emb_size, filter_size), W=conv_W, b=conv_b)
+#     conv_output=conv_model.narrow_conv_out #(batch, 1, hidden_size, maxparalen-filter_size+1)    
+#     conv_output_into_tensor3=conv_output.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
+#     mask_for_conv_output=T.repeat(sents_mask[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
+#     masked_conv_output=conv_output_into_tensor3*mask_for_conv_output      
+#     sent_embeddings=T.max(masked_conv_output, axis=2) #(batch_size, hidden_size)
     
-    mask_for_conv_output=T.repeat(sents_mask[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-    masked_conv_output=conv_output_into_tensor3*mask_for_conv_output
-      
-    sent_embeddings=T.max(masked_conv_output, axis=2) #(batch_size, emb_size)
-#     sent_embeddings=theano.printing.Print('sent_embeddings')(sent_embeddings)
+    #GRU
+    U1, W1, b1=create_GRU_para(rng, emb_size, hidden_size)
+    NN_para=[U1, W1, b1]
+    gru_input = common_input.dimshuffle((0,2,1))
+    gru_layer=GRU_Batch_Tensor_Input_with_Mask(gru_input, sents_mask,  hidden_size, U1, W1, b1)
+    sent_embeddings=gru_layer.output_sent_rep  # (batch_size, hidden_size)
+
+    #LSTM
+#     LSTM_para_dict=create_LSTM_para(rng, emb_size, hidden_size)
+#     NN_para=LSTM_para_dict.values()
+#     lstm_input = common_input.dimshuffle((0,2,1))
+#     lstm_layer=LSTM_Batch_Tensor_Input_with_Mask(lstm_input, sents_mask,  hidden_size, LSTM_para_dict)
+#     sent_embeddings=lstm_layer.output_sent_rep  # (batch_size, hidden_size)    
     #classification layer
     U_a = create_ensemble_para(rng, 2, hidden_size) # 3 extra features
     LR_b = theano.shared(value=np.zeros((2,),dtype=theano.config.floatX),name='LR_b', borrow=True)    
@@ -85,10 +91,10 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     layer_LR=LogisticRegression(rng, input=sent_embeddings, n_in=hidden_size, n_out=2, W=U_a, b=LR_b)
     loss=layer_LR.negative_log_likelihood(labels)
     
-    params = [embeddings]+conv_para+LR_para
+    params = [embeddings]+NN_para+LR_para
 #     L2_reg =L2norm_paraList([embeddings,conv_W, U_a])
-    diversify_reg= Diversify_Reg(U_a.T)+Diversify_Reg(conv_W_into_matrix)
-    #L2_reg = L2norm_paraList(params)
+#     diversify_reg= Diversify_Reg(U_a.T)+Diversify_Reg(conv_W_into_matrix)
+
     cost=loss#+Div_reg*diversify_reg#+L2_weight*L2_reg
     
     

@@ -74,6 +74,19 @@ def create_GRU_para(rng, word_dim, hidden_dim):
         b = theano.shared(name='b', value=b.astype(theano.config.floatX), borrow=True)
         return U, W, b
 
+def create_LSTM_para(rng, word_dim, hidden_dim):
+    params={}
+    #W play with input dimension
+    W = rng.normal(0.0, 0.01, (word_dim, 4*hidden_dim))
+    params['W'] = W
+    #U play with hidden states
+    U = rng.normal(0.0, 0.01, (hidden_dim, 4*hidden_dim))
+    params['U'] = U
+    b = numpy.zeros((4 * hidden_dim,))
+    params['b'] = b.astype(theano.config.floatX)
+
+    return params
+
 def create_ensemble_para(rng, fan_in, fan_out):
 #         W=rng.normal(0.0, 0.01, (fan_out,fan_in))
 # 
@@ -392,6 +405,53 @@ class GRU_Batch_Tensor_Input_with_Mask(object):
 
         self.output_sent_rep=self.output_tensor[:,:,-1]
 
+class LSTM_Batch_Tensor_Input_with_Mask(object):
+#     def __init__(self, X, Mask, hidden_dim, U, W, b):
+    def __init__(self, X, Mask, hidden_size, tparams ):
+        #X (batch, emb_size, senLen), Mask (batch, senLen)
+        state_below=X.dimshuffle(2,0,1)
+        mask=Mask.T
+        # state_below, (senLen, batch_size, emb_size)
+        nsteps = state_below.shape[0] #sentence length
+        if state_below.ndim == 3:
+            n_samples = state_below.shape[1] #batch_size
+        else:
+            n_samples = 1
+    
+        assert mask is not None
+    
+        def _slice(_x, n, dim):
+            if _x.ndim == 3:
+                return _x[:, :, n * dim:(n + 1) * dim]
+            return _x[:, n * dim:(n + 1) * dim]
+    
+        def _step(m_, x_, h_, c_):
+            preact = T.dot(h_, tparams['U'])
+            preact += x_
+    
+            i = T.nnet.sigmoid(_slice(preact, 0, hidden_size))
+            f = T.nnet.sigmoid(_slice(preact, 1, hidden_size))
+            o = T.nnet.sigmoid(_slice(preact, 2, hidden_size))
+            c = T.tanh(_slice(preact, 3, hidden_size))
+    
+            c = f * c_ + i * c
+            c = m_[:, None] * c + (1. - m_)[:, None] * c_
+    
+            h = o * T.tanh(c)
+            h = m_[:, None] * h + (1. - m_)[:, None] * h_
+    
+            return h, c
+    
+        state_below = (T.dot(state_below, tparams['W']) + tparams['b'])
+    
+        dim_proj = hidden_size
+        rval, updates = theano.scan(_step,
+                                    sequences=[mask, state_below],
+                                    outputs_info=[T.alloc(numpy.asarray(0., dtype=theano.config.floatX),n_samples,dim_proj),
+                                                  T.alloc(numpy.asarray(0., dtype=theano.config.floatX),n_samples,dim_proj)],
+                                    n_steps=nsteps)
+        self.output_tensor = rval[0] #(nsamples, batch, hidden_size)
+        self.output_sent_rep=self.output_tensor[-1,:,:]
 
 class GRU_Batch_Tensor_Input(object):
     def __init__(self, X, hidden_dim, U, W, b, bptt_truncate):
