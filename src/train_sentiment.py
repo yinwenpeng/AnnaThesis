@@ -8,8 +8,6 @@ import time
 import numpy as np
 import theano
 import theano.tensor as T
-import theano.sandbox.neighbours as TSN
-import time
 import random
 
 from logistic_sgd import LogisticRegression
