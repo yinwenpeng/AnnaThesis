@@ -18,10 +18,20 @@ from random import shuffle
 from load_data import load_sentiment_dataset, load_word2vec, load_word2vec_to_init
 from common_functions import create_conv_para, Conv_with_input_para, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
 def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0.001, emb_size=100, hidden_size=300, batch_size=50, filter_size=3, maxSentLen=60):
+    '''
+    epoch: iterating over all training examples once is called one epoch, usually this process will repeated multiple times
+    L2_weight: the parameter for L2 normalization;
+    Div_reg: the parameter for Diversity normalization;
+    emb_size: the dimension of initialized word representations in the beginning;
+    hidden_size: the dimension of some hidden states;
+    batch_size: how many sentences our model deals with together;
+    filter_size: how many consecutive words CNN deal with in one sliding window;
+    maxSentLen: to control the model complexity, we truncate all sentences into maximal length
+    '''
     
-    rng = np.random.RandomState(1234)
+    rng = np.random.RandomState(1234)    #random seed, control the model generates the same results 
 
-    all_sentences, all_masks, all_labels, word2id=load_sentiment_dataset(maxlen=maxSentLen, minlen=1+1)
+    all_sentences, all_masks, all_labels, word2id=load_sentiment_dataset(maxlen=maxSentLen, minlen=1+1)  #minlen, include one label, at least one word in the sentence
     train_sents=all_sentences[0]
     train_masks=all_masks[0]
     train_labels=all_labels[0]
@@ -31,6 +41,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     dev_masks=all_masks[1]
     dev_labels=all_labels[1]
     dev_size=len(dev_labels)
+    
     test_sents=all_sentences[2]
     test_masks=all_masks[2]
     test_labels=all_labels[2]    
@@ -38,14 +49,16 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     
     vocab_size=  len(word2id)+1 # add one zero pad index
                     
-    rand_values=rng.normal(0.0, 0.01, (vocab_size, emb_size))
-
+    rand_values=rng.normal(0.0, 0.01, (vocab_size, emb_size))   #generate a matrix by Gaussian distribution
+    #here, we leave code for loading word2vec to initialize words
 #     rand_values[0]=numpy.array(numpy.zeros(emb_size),dtype=theano.config.floatX)
 #     id2word = {y:x for x,y in word2id.iteritems()}
 #     word2vec=load_word2vec()
 #     rand_values=load_word2vec_to_init(rand_values, id2word, word2vec)
-    embeddings=theano.shared(value=np.array(rand_values,dtype=theano.config.floatX), borrow=True)         
+    embeddings=theano.shared(value=np.array(rand_values,dtype=theano.config.floatX), borrow=True)   #wrap up the python variable "rand_values" into theano variable      
     
+    
+    #now, start to build the input form of the model
     sents_id_matrix=T.imatrix('sents_id_matrix')
     sents_mask=T.fmatrix('sents_mask')
     labels=T.ivector('labels')
@@ -54,7 +67,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     ######################
     print '... building the model'    
     
-    common_input=embeddings[sents_id_matrix.flatten()].reshape((batch_size,maxSentLen, emb_size))
+    common_input=embeddings[sents_id_matrix.flatten()].reshape((batch_size,maxSentLen, emb_size)) #the input format can be adapted into CNN or GRU or LSTM
     
     
     #conv
@@ -96,19 +109,16 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
 #     diversify_reg= Diversify_Reg(U_a.T)+Diversify_Reg(conv_W_into_matrix)
 
     cost=loss#+Div_reg*diversify_reg#+L2_weight*L2_reg
+    # create a list of gradients for all model parameters
+    grads = T.grad(cost, params)    
     
-    
+    #implement AdaGrad for updating NN
     accumulator=[]
     for para_i in params:
         eps_p=np.zeros_like(para_i.get_value(borrow=True),dtype=theano.config.floatX)
         accumulator.append(theano.shared(eps_p, borrow=True))
-        
-    # create a list of gradients for all model parameters
-    grads = T.grad(cost, params)
-  
     updates = []
     for param_i, grad_i, acc_i in zip(params, grads, accumulator):
-#         print grad_i.type
         acc = acc_i + T.sqr(grad_i)
         updates.append((param_i, param_i - learning_rate * grad_i / (T.sqrt(acc)+1e-8)))   #AdaGrad
         updates.append((acc_i, acc))    
@@ -147,11 +157,11 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     while (epoch < n_epochs) and (not done_looping):
         epoch = epoch + 1
         combined = zip(train_sents, train_masks, train_labels)
-        random.shuffle(combined)
+        random.shuffle(combined) #shuffle training set for each new epoch
         iter_accu=0
         cost_i=0.0
         for batch_id in train_batch_start: 
-            # iter means how many batches have been runed, taking into loop
+            # iter means how many batches have been run, taking into loop
             iter = (epoch - 1) * n_train_batches + iter_accu +1
             iter_accu+=1
 

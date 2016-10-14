@@ -1,18 +1,21 @@
 import numpy
 def transfer_wordlist_2_idlist_with_maxlen(token_list, vocab_map, maxlen):
+    '''
+    From such as ['i', 'love', 'Munich'] to idlist [23, 129, 34], if maxlen is 5, then pad two zero in the left side, becoming [0, 0, 23, 129, 34]
+    '''
     idlist=[]
     for word in token_list:
         id=vocab_map.get(word)
-        if id is None:
-            id=len(vocab_map)+1  # id starts from 1
+        if id is None: # if word was not in the vocabulary
+            id=len(vocab_map)+1  # id of true words starts from 1, leaving 0 to "pad id"
             vocab_map[word]=id
         idlist.append(id)
-    mask_list=[1.0]*len(idlist)
+    mask_list=[1.0]*len(idlist) # mask is used to indicate each word is a true word or a pad word
     pad_size=maxlen-len(idlist)
     if pad_size>0:
         idlist=[0]*pad_size+idlist
         mask_list=[0.0]*pad_size+mask_list
-    else:
+    else: # if actual sentence len is longer than the maxlen, truncate
         idlist=idlist[:maxlen]
         mask_list=mask_list[:maxlen]
     return idlist, mask_list
@@ -21,7 +24,7 @@ def transfer_wordlist_2_idlist_with_maxlen(token_list, vocab_map, maxlen):
 def load_sentiment_dataset(maxlen=40, minlen=4):
     root="/mounts/data/proj/wenpeng/Dataset/StanfordSentiment/stanfordSentimentTreebank/2classes/"
     files=['1train.txt', '1dev.txt', '1test.txt']
-    word2id={}
+    word2id={}  # store vocabulary, each word map to a id
     all_sentences=[]
     all_masks=[]
     all_labels=[]
@@ -33,9 +36,9 @@ def load_sentiment_dataset(maxlen=40, minlen=4):
         labels=[]
         readfile=open(root+files[i], 'r')
         for line in readfile:
-            parts=line.strip().lower().split()
-            if len(parts) > minlen:
-                label=int(parts[0])-1  # keey label be 0 or 1
+            parts=line.strip().lower().split() #lowercase all tokens, as we guess this is not important for sentiment task
+            if len(parts) > minlen: # we only consider some sentences that are not too short, controlled by minlen
+                label=int(parts[0])-1  # keep label be 0 or 1
                 sentence_wordlist=parts[1:]
                 
                 labels.append(label)
