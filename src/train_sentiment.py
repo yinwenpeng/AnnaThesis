@@ -78,41 +78,45 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
 #     conv_model = Conv_with_input_para(rng, input=conv_input,
 #             image_shape=(batch_size, 1, emb_size, maxSentLen),
 #             filter_shape=(hidden_size, 1, emb_size, filter_size), W=conv_W, b=conv_b)
-#     conv_output=conv_model.narrow_conv_out #(batch, 1, hidden_size, maxparalen-filter_size+1)    
+#     conv_output=conv_model.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
 #     conv_output_into_tensor3=conv_output.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
 #     mask_for_conv_output=T.repeat(sents_mask[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-#     masked_conv_output=conv_output_into_tensor3*mask_for_conv_output      
-#     sent_embeddings=T.max(masked_conv_output, axis=2) #(batch_size, hidden_size)
+#     masked_conv_output=conv_output_into_tensor3*mask_for_conv_output      #mutiple mask with the conv_out to set the features by UNK to zero
+#     sent_embeddings=T.max(masked_conv_output, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
     
     #GRU
 #     U1, W1, b1=create_GRU_para(rng, emb_size, hidden_size)
-#     NN_para=[U1, W1, b1]
-#     gru_input = common_input.dimshuffle((0,2,1))
+#     NN_para=[U1, W1, b1]     #U1 includes 3 matrices, W1 also includes 3 matrices b1 is bias
+#     gru_input = common_input.dimshuffle((0,2,1))   #gru requires input (batch_size, emb_size, maxSentLen)
 #     gru_layer=GRU_Batch_Tensor_Input_with_Mask(gru_input, sents_mask,  hidden_size, U1, W1, b1)
 #     sent_embeddings=gru_layer.output_sent_rep  # (batch_size, hidden_size)
 
     #LSTM
     LSTM_para_dict=create_LSTM_para(rng, emb_size, hidden_size)
-    NN_para=LSTM_para_dict.values()
-    lstm_input = common_input.dimshuffle((0,2,1))
+    NN_para=LSTM_para_dict.values() # .values returns a list of parameters
+    lstm_input = common_input.dimshuffle((0,2,1)) #LSTM has the same inpur format with GRU
     lstm_layer=LSTM_Batch_Tensor_Input_with_Mask(lstm_input, sents_mask,  hidden_size, LSTM_para_dict)
-    sent_embeddings=lstm_layer.output_sent_rep  # (batch_size, hidden_size)    
-    #classification layer
-    U_a = create_ensemble_para(rng, 2, hidden_size) # 3 extra features
-    LR_b = theano.shared(value=np.zeros((2,),dtype=theano.config.floatX),name='LR_b', borrow=True)    
+    sent_embeddings=lstm_layer.output_sent_rep  # (batch_size, hidden_size)   
+     
+    #classification layer, it is just mapping from a feature vector of size "hidden_size" to a vector of only two values: positive, negative
+    U_a = create_ensemble_para(rng, 2, hidden_size) # the weight matrix hidden_size*2
+    LR_b = theano.shared(value=np.zeros((2,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class  
     LR_para=[U_a, LR_b]
-    layer_LR=LogisticRegression(rng, input=sent_embeddings, n_in=hidden_size, n_out=2, W=U_a, b=LR_b)
-    loss=layer_LR.negative_log_likelihood(labels)
+    layer_LR=LogisticRegression(rng, input=sent_embeddings, n_in=hidden_size, n_out=2, W=U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
+    loss=layer_LR.negative_log_likelihood(labels)  #for classification task, we usually used negative log likelihood as loss, the lower the better.
     
-    params = [embeddings]+NN_para+LR_para
+    params = [embeddings]+NN_para+LR_para   # put all model parameters together
 #     L2_reg =L2norm_paraList([embeddings,conv_W, U_a])
 #     diversify_reg= Diversify_Reg(U_a.T)+Diversify_Reg(conv_W_into_matrix)
 
     cost=loss#+Div_reg*diversify_reg#+L2_weight*L2_reg
-    # create a list of gradients for all model parameters
-    grads = T.grad(cost, params)    
     
-    #implement AdaGrad for updating NN
+    grads = T.grad(cost, params)    # create a list of gradients for all model parameters
+    '''
+    #implement AdaGrad for updating NN. Traditional parameter updating rule is: P_new=P_old - learning_rate*gradient.
+    AdaGrad is an improved version of this, it changes the gradient (you can also think it changes the learning rate) by considering all historical gradients
+    In below, "accumulator" is used to store the accumulated history gradient for each parameter.
+    '''
     accumulator=[]
     for para_i in params:
         eps_p=np.zeros_like(para_i.get_value(borrow=True),dtype=theano.config.floatX)
@@ -120,11 +124,15 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     updates = []
     for param_i, grad_i, acc_i in zip(params, grads, accumulator):
         acc = acc_i + T.sqr(grad_i)
-        updates.append((param_i, param_i - learning_rate * grad_i / (T.sqrt(acc)+1e-8)))   #AdaGrad
+        updates.append((param_i, param_i - learning_rate * grad_i / (T.sqrt(acc)+1e-8)))   #1e-8 is add to get rid of zero division
         updates.append((acc_i, acc))    
 
 
-
+    '''
+    for a theano function, you just need to tell it what are the inputs, what is the output. In below, "sents_id_matrix, sents_mask, labels" are three inputs, you put them
+    into a list, "cost" is the output of the training model; "layer_LR.errors(labels)" is the output of test model as we are interested in the classification accuracy of 
+    test data. This kind of error will be changed into accuracy afterwards
+    '''
     train_model = theano.function([sents_id_matrix, sents_mask, labels], cost, updates=updates,on_unused_input='ignore')
     
     test_model = theano.function([sents_id_matrix, sents_mask, labels], layer_LR.errors(labels), on_unused_input='ignore')    
@@ -141,14 +149,15 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     past_time= mid_time
     epoch = 0
     done_looping = False
-
+    
+    '''
+    split training/test sets into a list of mini-batches, each batch contains batch_size of sentences
+    usually there remain some sentences that are fewer than a normal batch, we can start from the "train_size-batch_size" to the last sentence to form a mini-batch
+    or cource this means a few sentences will be trained more times than normal, but doesn't matter
+    '''
     n_train_batches=train_size/batch_size
-#     remain_train=train_size%batch_size
     train_batch_start=list(np.arange(n_train_batches)*batch_size)+[train_size-batch_size]
-
-
     n_test_batches=test_size/batch_size
-#     remain_test=test_size%batch_size
     test_batch_start=list(np.arange(n_test_batches)*batch_size)+[test_size-batch_size]
 
         
@@ -157,28 +166,27 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     while (epoch < n_epochs) and (not done_looping):
         epoch = epoch + 1
         combined = zip(train_sents, train_masks, train_labels)
-        random.shuffle(combined) #shuffle training set for each new epoch
+        random.shuffle(combined) #shuffle training set for each new epoch, is supposed to promote performance, but not garrenteed
         iter_accu=0
         cost_i=0.0
-        for batch_id in train_batch_start: 
+        for batch_id in train_batch_start: #for each batch
             # iter means how many batches have been run, taking into loop
             iter = (epoch - 1) * n_train_batches + iter_accu +1
             iter_accu+=1
 
-#             print train_sents[batch_id:batch_id+batch_size]
             cost_i+= train_model(
                                 np.asarray(train_sents[batch_id:batch_id+batch_size], dtype='int32'), 
                                       np.asarray(train_masks[batch_id:batch_id+batch_size], dtype=theano.config.floatX), 
                                       np.asarray(train_labels[batch_id:batch_id+batch_size], dtype='int32'))
 
-            #print iter
+            #after each 1000 batches, we test the performance of the model on all test data
             if iter%1000==0:
                 print 'Epoch ', epoch, 'iter '+str(iter)+' average cost: '+str(cost_i/iter), 'uses ', (time.time()-past_time)/60.0, 'min'
                 print 'Testing...'
                 past_time = time.time()
                   
                 error_sum=0.0
-                for test_batch_id in test_batch_start:
+                for test_batch_id in test_batch_start: # for each test batch
                     error_i=test_model(
                                 np.asarray(test_sents[test_batch_id:test_batch_id+batch_size], dtype='int32'), 
                                       np.asarray(test_masks[test_batch_id:test_batch_id+batch_size], dtype=theano.config.floatX), 
