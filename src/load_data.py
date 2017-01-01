@@ -13,8 +13,8 @@ def transfer_wordlist_2_idlist_with_maxlen(token_list, vocab_map, maxlen):
     mask_list=[1.0]*len(idlist) # mask is used to indicate each word is a true word or a pad word
     pad_size=maxlen-len(idlist)
     if pad_size>0:
-        idlist=idlist+[0]*pad_size
-        mask_list=mask_list+[0.0]*pad_size
+        idlist=[0]*pad_size+idlist
+        mask_list=[0.0]*pad_size+mask_list
     else: # if actual sentence len is longer than the maxlen, truncate
         idlist=idlist[:maxlen]
         mask_list=mask_list[:maxlen]
@@ -73,4 +73,51 @@ def load_word2vec_to_init(rand_values, ivocab, word2vec):
             rand_values[id]=numpy.array(emb)
     print '==> use word2vec initialization over...'
     return rand_values            
-            
+
+def load_SNLI_dataset(maxlen=40):
+    root="/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/"
+    files=['train.txt', 'dev.txt', 'test.txt']
+    word2id={}  # store vocabulary, each word map to a id
+    all_sentences_l=[]
+    all_masks_l=[]
+    all_sentences_r=[]
+    all_masks_r=[]
+    all_labels=[]
+    max_sen_len=0
+    for i in range(len(files)):
+        print 'loading file:', root+files[i], '...'
+
+        sents_l=[]
+        sents_masks_l=[]
+        sents_r=[]
+        sents_masks_r=[]
+        labels=[]
+        readfile=open(root+files[i], 'r')
+        for line in readfile:
+            parts=line.strip().lower().split('\t') #lowercase all tokens, as we guess this is not important for sentiment task
+            if len(parts)==3:
+
+                label=int(parts[0])  # keep label be 0 or 1
+                sentence_wordlist_l=parts[1].strip().split()
+                sentence_wordlist_r=parts[2].strip().split()
+                l_len=len(sentence_wordlist_l)
+                r_len = len(sentence_wordlist_r)
+                if l_len > max_sen_len:
+                    max_sen_len=l_len
+                if r_len > max_sen_len:
+                    max_sen_len=r_len
+                labels.append(label)
+                sent_idlist_l, sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_l, word2id, maxlen)
+                sent_idlist_r, sent_masklist_r=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_r, word2id, maxlen)
+                sents_l.append(sent_idlist_l)
+                sents_masks_l.append(sent_masklist_l)
+                sents_r.append(sent_idlist_r)
+                sents_masks_r.append(sent_masklist_r)
+        all_sentences_l.append(sents_l)
+        all_sentences_r.append(sents_r)
+        all_masks_l.append(sents_masks_l)
+        all_masks_r.append(sents_masks_r)
+        all_labels.append(labels)
+        print '\t\t\t size:', len(labels), 'pairs'
+    print 'dataset loaded over, totally ', len(word2id), 'words, max sen len:',   max_sen_len       
+    return all_sentences_l, all_masks_l, all_sentences_r, all_masks_r,all_labels, word2id           
