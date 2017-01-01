@@ -11,13 +11,13 @@ import theano.tensor as T
 import random
 
 from logistic_sgd import LogisticRegression
-
+from mlp import HiddenLayer
 from theano.tensor.signal import downsample
 from random import shuffle
 
 from load_data import load_SNLI_dataset, load_word2vec, load_word2vec_to_init
-from common_functions import create_conv_para, Conv_with_input_para, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
-def evaluate_lenet5(learning_rate=0.1, n_epochs=3, L2_weight=0.001, emb_size=100, batch_size=50, filter_size=3, maxSentLen=30):
+from common_functions import create_conv_para, Conv_with_input_para, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, cosine_matrix1_matrix2_rowwise, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
+def evaluate_lenet5(learning_rate=0.1, n_epochs=4, L2_weight=0.001, emb_size=30, batch_size=50, filter_size=3, maxSentLen=50, nn='LSTM'):
     hidden_size=emb_size
     model_options = locals().copy()
     print "model options", model_options
@@ -54,7 +54,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=3, L2_weight=0.001, emb_size=100
                     
     rand_values=rng.normal(0.0, 0.01, (vocab_size, emb_size))   #generate a matrix by Gaussian distribution
     #here, we leave code for loading word2vec to initialize words
-#     rand_values[0]=numpy.array(numpy.zeros(emb_size),dtype=theano.config.floatX)
+#     rand_values[0]=np.array(np.zeros(emb_size),dtype=theano.config.floatX)
 #     id2word = {y:x for x,y in word2id.iteritems()}
 #     word2vec=load_word2vec()
 #     rand_values=load_word2vec_to_init(rand_values, id2word, word2vec)
@@ -76,59 +76,72 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=3, L2_weight=0.001, emb_size=100
     common_input_r=embeddings[sents_ids_r.flatten()].reshape((batch_size,maxSentLen, emb_size))
     
     #conv
-#     conv_W, conv_b=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, filter_size))
-#     conv_W_into_matrix=conv_W.reshape((conv_W.shape[0], conv_W.shape[2]*conv_W.shape[3]))
-#     NN_para=[conv_W, conv_b]
-#     
-#     conv_input_l = common_input_l.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
-#     conv_model_l = Conv_with_input_para(rng, input=conv_input_l,
-#              image_shape=(batch_size, 1, emb_size, maxSentLen),
-#              filter_shape=(hidden_size, 1, emb_size, filter_size), W=conv_W, b=conv_b)
-#     conv_output_l=conv_model_l.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
-#     conv_output_into_tensor3_l=conv_output_l.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
-#     mask_for_conv_output_l=T.repeat(sents_mask_l[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-#     masked_conv_output_l=conv_output_into_tensor3_l*mask_for_conv_output_l      #mutiple mask with the conv_out to set the features by UNK to zero
-#     sent_embeddings_l=T.max(masked_conv_output_l, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
-# 
-#     conv_input_r = common_input_r.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
-#     conv_model_r = Conv_with_input_para(rng, input=conv_input_r,
-#              image_shape=(batch_size, 1, emb_size, maxSentLen),
-#              filter_shape=(hidden_size, 1, emb_size, filter_size), W=conv_W, b=conv_b)
-#     conv_output_r=conv_model_r.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
-#     conv_output_into_tensor3_r=conv_output_r.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
-#     mask_for_conv_output_r=T.repeat(sents_mask_r[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-#     masked_conv_output_r=conv_output_into_tensor3_r*mask_for_conv_output_r      #mutiple mask with the conv_out to set the features by UNK to zero
-#     sent_embeddings_r=T.max(masked_conv_output_r, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size   
+    if nn=='CNN':
+        conv_W, conv_b=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, filter_size))
+        conv_W_into_matrix=conv_W.reshape((conv_W.shape[0], conv_W.shape[2]*conv_W.shape[3]))
+        NN_para=[conv_W, conv_b]
+         
+        conv_input_l = common_input_l.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
+        conv_model_l = Conv_with_input_para(rng, input=conv_input_l,
+                 image_shape=(batch_size, 1, emb_size, maxSentLen),
+                 filter_shape=(hidden_size, 1, emb_size, filter_size), W=conv_W, b=conv_b)
+        conv_output_l=conv_model_l.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
+        conv_output_into_tensor3_l=conv_output_l.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
+        mask_for_conv_output_l=T.repeat(sents_mask_l[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
+        masked_conv_output_l=conv_output_into_tensor3_l*mask_for_conv_output_l      #mutiple mask with the conv_out to set the features by UNK to zero
+        sent_embeddings_l=T.max(masked_conv_output_l, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
+     
+        conv_input_r = common_input_r.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
+        conv_model_r = Conv_with_input_para(rng, input=conv_input_r,
+                 image_shape=(batch_size, 1, emb_size, maxSentLen),
+                 filter_shape=(hidden_size, 1, emb_size, filter_size), W=conv_W, b=conv_b)
+        conv_output_r=conv_model_r.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
+        conv_output_into_tensor3_r=conv_output_r.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
+        mask_for_conv_output_r=T.repeat(sents_mask_r[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
+        masked_conv_output_r=conv_output_into_tensor3_r*mask_for_conv_output_r      #mutiple mask with the conv_out to set the features by UNK to zero
+        sent_embeddings_r=T.max(masked_conv_output_r, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size   
     
      
     #GRU
-#     U1, W1, b1=create_GRU_para(rng, emb_size, hidden_size)
-#     NN_para=[U1, W1, b1]     #U1 includes 3 matrices, W1 also includes 3 matrices b1 is bias
-#     gru_input_l = common_input_l.dimshuffle((0,2,1))   #gru requires input (batch_size, emb_size, maxSentLen)
-#     gru_layer_l=GRU_Batch_Tensor_Input_with_Mask(gru_input_l, sents_mask_l,  hidden_size, U1, W1, b1)
-#     sent_embeddings_l=gru_layer_l.output_sent_rep  # (batch_size, hidden_size)
-#     gru_input_r = common_input_r.dimshuffle((0,2,1))   #gru requires input (batch_size, emb_size, maxSentLen)
-#     gru_layer_r=GRU_Batch_Tensor_Input_with_Mask(gru_input_r, sents_mask_r,  hidden_size, U1, W1, b1)
-#     sent_embeddings_r=gru_layer_r.output_sent_rep  # (batch_size, hidden_size)
+    if nn=='GRU':
+        U1, W1, b1=create_GRU_para(rng, emb_size, hidden_size)
+        NN_para=[U1, W1, b1]     #U1 includes 3 matrices, W1 also includes 3 matrices b1 is bias
+        gru_input_l = common_input_l.dimshuffle((0,2,1))   #gru requires input (batch_size, emb_size, maxSentLen)
+        gru_layer_l=GRU_Batch_Tensor_Input_with_Mask(gru_input_l, sents_mask_l,  hidden_size, U1, W1, b1)
+        sent_embeddings_l=gru_layer_l.output_sent_rep  # (batch_size, hidden_size)
+        gru_input_r = common_input_r.dimshuffle((0,2,1))   #gru requires input (batch_size, emb_size, maxSentLen)
+        gru_layer_r=GRU_Batch_Tensor_Input_with_Mask(gru_input_r, sents_mask_r,  hidden_size, U1, W1, b1)
+        sent_embeddings_r=gru_layer_r.output_sent_rep  # (batch_size, hidden_size)
 
 
     #LSTM
-    LSTM_para_dict=create_LSTM_para(rng, emb_size, hidden_size)
-    NN_para=LSTM_para_dict.values() # .values returns a list of parameters
-    lstm_input_l = common_input_l.dimshuffle((0,2,1)) #LSTM has the same inpur format with GRU
-    lstm_layer_l=LSTM_Batch_Tensor_Input_with_Mask(lstm_input_l, sents_mask_l,  hidden_size, LSTM_para_dict)
-    sent_embeddings_l=lstm_layer_l.output_sent_rep  # (batch_size, hidden_size)   
-    lstm_input_r = common_input_r.dimshuffle((0,2,1)) #LSTM has the same inpur format with GRU
-    lstm_layer_r=LSTM_Batch_Tensor_Input_with_Mask(lstm_input_r, sents_mask_r,  hidden_size, LSTM_para_dict)
-    sent_embeddings_r=lstm_layer_r.output_sent_rep  # (batch_size, hidden_size)      
+    if nn=='LSTM':
+        LSTM_para_dict=create_LSTM_para(rng, emb_size, hidden_size)
+        NN_para=LSTM_para_dict.values() # .values returns a list of parameters
+        lstm_input_l = common_input_l.dimshuffle((0,2,1)) #LSTM has the same inpur format with GRU
+        lstm_layer_l=LSTM_Batch_Tensor_Input_with_Mask(lstm_input_l, sents_mask_l,  hidden_size, LSTM_para_dict)
+        sent_embeddings_l=lstm_layer_l.output_sent_rep  # (batch_size, hidden_size)   
+        lstm_input_r = common_input_r.dimshuffle((0,2,1)) #LSTM has the same inpur format with GRU
+        lstm_layer_r=LSTM_Batch_Tensor_Input_with_Mask(lstm_input_r, sents_mask_r,  hidden_size, LSTM_para_dict)
+        sent_embeddings_r=lstm_layer_r.output_sent_rep  # (batch_size, hidden_size)      
+    
+    
+    HL_layer_1_input = T.concatenate([sent_embeddings_l,sent_embeddings_r, sent_embeddings_l*sent_embeddings_r, cosine_matrix1_matrix2_rowwise(sent_embeddings_l,sent_embeddings_r).dimshuffle(0,'x')],axis=1)
+    HL_layer_1_input_size = hidden_size*3+1
+    HL_layer_1=HiddenLayer(rng, input=HL_layer_1_input, n_in=HL_layer_1_input_size, n_out=hidden_size, activation=T.tanh)
+    HL_layer_2=HiddenLayer(rng, input=HL_layer_1.output, n_in=hidden_size, n_out=hidden_size, activation=T.tanh)
+
     #classification layer, it is just mapping from a feature vector of size "hidden_size" to a vector of only two values: positive, negative
-    U_a = create_ensemble_para(rng, 2, hidden_size*2) # the weight matrix hidden_size*2
-    LR_b = theano.shared(value=np.zeros((2,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class  
+    LR_input_size=HL_layer_1_input_size+2*hidden_size
+    U_a = create_ensemble_para(rng, 3, LR_input_size) # the weight matrix hidden_size*2
+    LR_b = theano.shared(value=np.zeros((3,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class  
     LR_para=[U_a, LR_b]
-    layer_LR=LogisticRegression(rng, input=T.concatenate([sent_embeddings_l,sent_embeddings_r],axis=1), n_in=hidden_size*2, n_out=2, W=U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
+    
+    LR_input=T.concatenate([HL_layer_1_input, HL_layer_1.output, HL_layer_2.output],axis=1)
+    layer_LR=LogisticRegression(rng, input=T.tanh(LR_input), n_in=LR_input_size, n_out=3, W=U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
     loss=layer_LR.negative_log_likelihood(labels)  #for classification task, we usually used negative log likelihood as loss, the lower the better.
     
-    params = [embeddings]+NN_para+LR_para   # put all model parameters together
+    params = [embeddings]+NN_para+LR_para+HL_layer_1.params+HL_layer_2.params   # put all model parameters together
 #     L2_reg =L2norm_paraList([embeddings,conv_W, U_a])
 #     diversify_reg= Diversify_Reg(U_a.T)+Diversify_Reg(conv_W_into_matrix)
 
@@ -193,10 +206,10 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=3, L2_weight=0.001, emb_size=100
                                 train_labels_store[train_id_batch])
 
             #after each 1000 batches, we test the performance of the model on all test data
-            if iter < len(train_batch_start)*2.0/3 and iter%100==0:
+            if epoch<3 and iter < len(train_batch_start)*2.0/3 and iter%500==0:
                 print 'Epoch ', epoch, 'iter '+str(iter)+' average cost: '+str(cost_i/iter), 'uses ', (time.time()-past_time)/60.0, 'min'
                 past_time = time.time()
-            if iter >= len(train_batch_start)*2.0/3 and iter%100==0:
+            if epoch >=3 and iter >= len(train_batch_start)*2.0/3 and iter%500==0:
                 print 'Epoch ', epoch, 'iter '+str(iter)+' average cost: '+str(cost_i/iter), 'uses ', (time.time()-past_time)/60.0, 'min'
                 past_time = time.time()
 
@@ -250,46 +263,46 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=3, L2_weight=0.001, emb_size=100
                     
                     
 if __name__ == '__main__':
-    evaluate_lenet5()
-    #(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, emb_size=13, batch_size=50, filter_size=3, maxSentLen=60)
-#     lr_list=[0.1,0.05,0.01,0.005,0.001,0.2,0.3,0.4,0.5]
-#     emb_list=[5,10,15,20,25,30,35,40,45,50,60,70,80,90,100,120,150,200,250,300]
-#     batch_list=[5,10,20,30,40,50,60,70,80,100]
-#     maxlen_list=[5,10,15,20,25,30,35,40,45,50,55,60,65,70]
-#     
-#     best_acc=0.0
-#     best_lr=0.1
-#     for lr in lr_list:
-#         acc_test= evaluate_lenet5(learning_rate=lr)
-#         if acc_test>best_acc:
-#             best_lr=lr
-#             best_acc=acc_test
-#         print '\t\t\t\tcurrent best_acc:', best_acc
-#     
-#     best_emb=13
-#     for emb in emb_list:
-#         acc_test= evaluate_lenet5(learning_rate=best_lr, emb_size=emb)
-#         if acc_test>best_acc:
-#             best_emb=emb
-#             best_acc=acc_test
-#         print '\t\t\t\tcurrent best_acc:', best_acc
-#             
-#     best_batch=50
-#     for batch in batch_list:
-#         acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=batch)
-#         if acc_test>best_acc:
-#             best_batch=batch
-#             best_acc=acc_test
-#         print '\t\t\t\tcurrent best_acc:', best_acc
-#                     
-#     best_maxlen=60        
-#     for maxlen in maxlen_list:
-#         acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=best_batch, maxSentLen=maxlen)
-#         if acc_test>best_acc:
-#             best_maxlen=maxlen
-#             best_acc=acc_test
-#         print '\t\t\t\tcurrent best_acc:', best_acc
-#     print 'Hyper tune finished, best test acc: ', best_acc, ' by  lr: ', best_lr, ' emb: ', best_emb, ' batch: ', best_batch, ' maxlen: ', best_maxlen
+#     evaluate_lenet5()
+    #(learning_rate=0.1, n_epochs=3, L2_weight=0.001, emb_size=30, batch_size=50, filter_size=3, maxSentLen=50, nn='GRU'):
+    lr_list=[0.1,0.05,0.01,0.005,0.001,0.2,0.3]
+    emb_list=[10,20,30,40,50,60,70,80,90,100,120,150,200,250,300]
+    batch_list=[30,40,50,60,70,80,100,150,200,250,300]
+    maxlen_list=[35,40,45,50,55,60,65,70,75,80]
+     
+    best_acc=0.0
+    best_lr=0.1
+    for lr in lr_list:
+        acc_test= evaluate_lenet5(learning_rate=lr)
+        if acc_test>best_acc:
+            best_lr=lr
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_acc:', best_acc
+     
+    best_emb=30
+    for emb in emb_list:
+        acc_test= evaluate_lenet5(learning_rate=best_lr, emb_size=emb)
+        if acc_test>best_acc:
+            best_emb=emb
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_acc:', best_acc
+             
+    best_batch=50
+    for batch in batch_list:
+        acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=batch)
+        if acc_test>best_acc:
+            best_batch=batch
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_acc:', best_acc
+                     
+    best_maxlen=50        
+    for maxlen in maxlen_list:
+        acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=best_batch, maxSentLen=maxlen)
+        if acc_test>best_acc:
+            best_maxlen=maxlen
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_acc:', best_acc
+    print 'Hyper tune finished, best test acc: ', best_acc, ' by  lr: ', best_lr, ' emb: ', best_emb, ' batch: ', best_batch, ' maxlen: ', best_maxlen
     
     
     

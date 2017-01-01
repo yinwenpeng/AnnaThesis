@@ -1473,3 +1473,10 @@ def combine_for_LR(rng, hidden_size, para_reps, questions_reps, para_mask, batch
     #distributions=layer3.y_pred.reshape((batch_size, para_mask.shape[1]))
     masked_dis=distributions*para_mask    
     return  attention_paras, error, masked_dis
+
+def cosine_matrix1_matrix2_rowwise(M1, M2):
+    #assume both matrix are in shape (batch, hidden)
+    dot_prod=T.sum(M1*M2, axis=1) #batch
+    norm1=T.sqrt(1e-20+T.sum(M1**2,axis=1)) #batch
+    norm2=T.sqrt(1e-20+T.sum(M2**2,axis=1)) #batch
+    return dot_prod/(norm1*norm2+1e-20)
