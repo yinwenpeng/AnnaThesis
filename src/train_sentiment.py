@@ -17,17 +17,10 @@ from random import shuffle
 
 from load_data import load_sentiment_dataset, load_word2vec, load_word2vec_to_init
 from common_functions import create_conv_para, Conv_with_input_para, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
-def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0.001, emb_size=100, hidden_size=300, batch_size=50, filter_size=3, maxSentLen=60):
-    '''
-    epoch: iterating over all training examples once is called one epoch, usually this process will repeated multiple times
-    L2_weight: the parameter for L2 normalization;
-    Div_reg: the parameter for Diversity normalization;
-    emb_size: the dimension of initialized word representations in the beginning;
-    hidden_size: the dimension of some hidden states;
-    batch_size: how many sentences our model deals with together;
-    filter_size: how many consecutive words CNN deal with in one sliding window;
-    maxSentLen: to control the model complexity, we truncate all sentences into maximal length
-    '''
+def evaluate_lenet5(learning_rate=0.1, n_epochs=3, L2_weight=0.001, emb_size=13, batch_size=50, filter_size=3, maxSentLen=60):
+    hidden_size=emb_size
+    model_options = locals().copy()
+    print "model options", model_options
     
     rng = np.random.RandomState(1234)    #random seed, control the model generates the same results 
 
@@ -71,18 +64,18 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     
     
     #conv
-#     conv_input = common_input.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
-#     conv_W, conv_b=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, filter_size))
-#     conv_W_into_matrix=conv_W.reshape((conv_W.shape[0], conv_W.shape[2]*conv_W.shape[3]))
-#     NN_para=[conv_W, conv_b]
-#     conv_model = Conv_with_input_para(rng, input=conv_input,
-#             image_shape=(batch_size, 1, emb_size, maxSentLen),
-#             filter_shape=(hidden_size, 1, emb_size, filter_size), W=conv_W, b=conv_b)
-#     conv_output=conv_model.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
-#     conv_output_into_tensor3=conv_output.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
-#     mask_for_conv_output=T.repeat(sents_mask[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-#     masked_conv_output=conv_output_into_tensor3*mask_for_conv_output      #mutiple mask with the conv_out to set the features by UNK to zero
-#     sent_embeddings=T.max(masked_conv_output, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
+    conv_input = common_input.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
+    conv_W, conv_b=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, filter_size))
+    conv_W_into_matrix=conv_W.reshape((conv_W.shape[0], conv_W.shape[2]*conv_W.shape[3]))
+    NN_para=[conv_W, conv_b]
+    conv_model = Conv_with_input_para(rng, input=conv_input,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=(hidden_size, 1, emb_size, filter_size), W=conv_W, b=conv_b)
+    conv_output=conv_model.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
+    conv_output_into_tensor3=conv_output.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
+    mask_for_conv_output=T.repeat(sents_mask[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
+    masked_conv_output=conv_output_into_tensor3*mask_for_conv_output      #mutiple mask with the conv_out to set the features by UNK to zero
+    sent_embeddings=T.max(masked_conv_output, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
     
     #GRU
 #     U1, W1, b1=create_GRU_para(rng, emb_size, hidden_size)
@@ -92,11 +85,11 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
 #     sent_embeddings=gru_layer.output_sent_rep  # (batch_size, hidden_size)
 
     #LSTM
-    LSTM_para_dict=create_LSTM_para(rng, emb_size, hidden_size)
-    NN_para=LSTM_para_dict.values() # .values returns a list of parameters
-    lstm_input = common_input.dimshuffle((0,2,1)) #LSTM has the same inpur format with GRU
-    lstm_layer=LSTM_Batch_Tensor_Input_with_Mask(lstm_input, sents_mask,  hidden_size, LSTM_para_dict)
-    sent_embeddings=lstm_layer.output_sent_rep  # (batch_size, hidden_size)   
+#     LSTM_para_dict=create_LSTM_para(rng, emb_size, hidden_size)
+#     NN_para=LSTM_para_dict.values() # .values returns a list of parameters
+#     lstm_input = common_input.dimshuffle((0,2,1)) #LSTM has the same inpur format with GRU
+#     lstm_layer=LSTM_Batch_Tensor_Input_with_Mask(lstm_input, sents_mask,  hidden_size, LSTM_para_dict)
+#     sent_embeddings=lstm_layer.output_sent_rep  # (batch_size, hidden_size)   
      
     #classification layer, it is just mapping from a feature vector of size "hidden_size" to a vector of only two values: positive, negative
     U_a = create_ensemble_para(rng, 2, hidden_size) # the weight matrix hidden_size*2
@@ -133,10 +126,10 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     into a list, "cost" is the output of the training model; "layer_LR.errors(labels)" is the output of test model as we are interested in the classification accuracy of 
     test data. This kind of error will be changed into accuracy afterwards
     '''
-    train_model = theano.function([sents_id_matrix, sents_mask, labels], cost, updates=updates,on_unused_input='ignore')
-    
-    test_model = theano.function([sents_id_matrix, sents_mask, labels], layer_LR.errors(labels), on_unused_input='ignore')    
-    
+    #train_model = theano.function([sents_id_matrix, sents_mask, labels], cost, updates=updates, on_unused_input='ignore')
+    train_model = theano.function([sents_id_matrix, sents_mask, labels], cost, updates=updates, allow_input_downcast=True, on_unused_input='ignore')
+    dev_model = theano.function([sents_id_matrix, sents_mask, labels], layer_LR.errors(labels), allow_input_downcast=True, on_unused_input='ignore')    
+    test_model = theano.function([sents_id_matrix, sents_mask, labels], layer_LR.errors(labels), allow_input_downcast=True, on_unused_input='ignore')
     
     ###############
     # TRAIN MODEL #
@@ -157,13 +150,16 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
     '''
     n_train_batches=train_size/batch_size
     train_batch_start=list(np.arange(n_train_batches)*batch_size)+[train_size-batch_size]
+    n_dev_batches=dev_size/batch_size
+    dev_batch_start=list(np.arange(n_dev_batches)*batch_size)+[dev_size-batch_size]
     n_test_batches=test_size/batch_size
     test_batch_start=list(np.arange(n_test_batches)*batch_size)+[test_size-batch_size]
 
         
-    max_acc=0.0
+    max_acc_dev=0.0
+    max_acc_test=0.0
     
-    while (epoch < n_epochs) and (not done_looping):
+    while epoch < n_epochs:
         epoch = epoch + 1
         combined = zip(train_sents, train_masks, train_labels)
         random.shuffle(combined) #shuffle training set for each new epoch, is supposed to promote performance, but not garrenteed
@@ -180,46 +176,105 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, Div_reg=0
                                       np.asarray(train_labels[batch_id:batch_id+batch_size], dtype='int32'))
 
             #after each 1000 batches, we test the performance of the model on all test data
-            if iter%1000==0:
+            if iter < len(train_batch_start)*2.0/3 and iter%100==0:
                 print 'Epoch ', epoch, 'iter '+str(iter)+' average cost: '+str(cost_i/iter), 'uses ', (time.time()-past_time)/60.0, 'min'
-                print 'Testing...'
                 past_time = time.time()
-                  
+            if iter >= len(train_batch_start)*2.0/3 and iter%100==0:
+                print 'Epoch ', epoch, 'iter '+str(iter)+' average cost: '+str(cost_i/iter), 'uses ', (time.time()-past_time)/60.0, 'min'
+                past_time = time.time()
+
                 error_sum=0.0
-                for test_batch_id in test_batch_start: # for each test batch
-                    error_i=test_model(
-                                np.asarray(test_sents[test_batch_id:test_batch_id+batch_size], dtype='int32'), 
-                                      np.asarray(test_masks[test_batch_id:test_batch_id+batch_size], dtype=theano.config.floatX), 
-                                      np.asarray(test_labels[test_batch_id:test_batch_id+batch_size], dtype='int32'))
+                for dev_batch_id in dev_batch_start: # for each test batch
+                    error_i=dev_model(
+                                np.asarray(dev_sents[dev_batch_id:dev_batch_id+batch_size], dtype='int32'), 
+                                      np.asarray(dev_masks[dev_batch_id:dev_batch_id+batch_size], dtype=theano.config.floatX), 
+                                      np.asarray(dev_labels[dev_batch_id:dev_batch_id+batch_size], dtype='int32'))
                     
                     error_sum+=error_i
-                accuracy=1.0-error_sum/(len(test_batch_start))
-                if accuracy > max_acc:
-                    max_acc=accuracy
-                print 'current acc:', accuracy, '\t\t\t\t\tmax acc:', max_acc
-
+                dev_accuracy=1.0-error_sum/(len(dev_batch_start))
+                if dev_accuracy > max_acc_dev:
+                    max_acc_dev=dev_accuracy
+                    print 'current dev_accuracy:', dev_accuracy, '\t\t\t\t\tmax max_acc_dev:', max_acc_dev
+                    #best dev model, do test
+                    error_sum=0.0
+                    for test_batch_id in test_batch_start: # for each test batch
+                        error_i=test_model(
+                                    np.asarray(test_sents[test_batch_id:test_batch_id+batch_size], dtype='int32'), 
+                                          np.asarray(test_masks[test_batch_id:test_batch_id+batch_size], dtype=theano.config.floatX), 
+                                          np.asarray(test_labels[test_batch_id:test_batch_id+batch_size], dtype='int32'))
                         
+                        error_sum+=error_i
+                    test_accuracy=1.0-error_sum/(len(test_batch_start))
+                    if test_accuracy > max_acc_test:
+                        max_acc_test=test_accuracy
+                    print '\t\tcurrent testbacc:', test_accuracy, '\t\t\t\t\tmax_acc_test:', max_acc_test
+                else:
+                    print 'current dev_accuracy:', dev_accuracy, '\t\t\t\t\tmax max_acc_dev:', max_acc_dev
 
-
-
-            if patience <= iter:
-                done_looping = True
-                break
         
         print 'Epoch ', epoch, 'uses ', (time.time()-mid_time)/60.0, 'min'
         mid_time = time.time()
             
         #print 'Batch_size: ', update_freq
     end_time = time.time()
-    print('Optimization complete.')
 
     print >> sys.stderr, ('The code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
                     
-                    
+    return max_acc_test                
                     
                     
                     
 if __name__ == '__main__':
-    evaluate_lenet5()
+    #(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, emb_size=13, batch_size=50, filter_size=3, maxSentLen=60)
+    lr_list=[0.1,0.05,0.01,0.005,0.001,0.2,0.3,0.4,0.5]
+    emb_list=[5,10,15,20,25,30,35,40,45,50,60,70,80,90,100,120,150,200,250,300]
+    batch_list=[5,10,20,30,40,50,60,70,80,100]
+    maxlen_list=[5,10,15,20,25,30,35,40,45,50,55,60,65,70]
+    
+    best_acc=0.0
+    best_lr=0.1
+    for lr in lr_list:
+        acc_test= evaluate_lenet5(learning_rate=lr)
+        if acc_test>best_acc:
+            best_lr=lr
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_acc:', best_acc
+    
+    best_emb=13
+    for emb in emb_list:
+        acc_test= evaluate_lenet5(learning_rate=best_lr, emb_size=emb)
+        if acc_test>best_acc:
+            best_emb=emb
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_acc:', best_acc
+            
+    best_batch=50
+    for batch in batch_list:
+        acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=batch)
+        if acc_test>best_acc:
+            best_batch=batch
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_acc:', best_acc
+                    
+    best_maxlen=60        
+    for maxlen in maxlen_list:
+        acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=best_batch, maxSentLen=maxlen)
+        if acc_test>best_acc:
+            best_maxlen=maxlen
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_acc:', best_acc
+    print 'Hyper tune finished, best test acc: ', best_acc, ' by  lr: ', best_lr, ' emb: ', best_emb, ' batch: ', best_batch, ' maxlen: ', best_maxlen
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

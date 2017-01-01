@@ -1,7 +1,7 @@
 import numpy
 import theano
 import theano.tensor as T
-import theano.tensor.nlinalg
+#import theano.tensor.nlinalg
 from theano.tensor.nnet import conv
 from cis.deep.utils.theano import debug_print
 from logistic_sgd import LogisticRegression

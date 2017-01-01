@@ -13,8 +13,8 @@ def transfer_wordlist_2_idlist_with_maxlen(token_list, vocab_map, maxlen):
     mask_list=[1.0]*len(idlist) # mask is used to indicate each word is a true word or a pad word
     pad_size=maxlen-len(idlist)
     if pad_size>0:
-        idlist=[0]*pad_size+idlist
-        mask_list=[0.0]*pad_size+mask_list
+        idlist=idlist+[0]*pad_size
+        mask_list=mask_list+[0.0]*pad_size
     else: # if actual sentence len is longer than the maxlen, truncate
         idlist=idlist[:maxlen]
         mask_list=mask_list[:maxlen]
