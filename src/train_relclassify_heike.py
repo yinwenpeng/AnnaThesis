@@ -211,7 +211,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50
     '''
     #train_model = theano.function([sents_id_matrix, sents_mask, labels], cost, updates=updates, on_unused_input='ignore')
     train_model = theano.function([left_id_matrix, left_mask, mid_id_matrix, mid_mask, right_id_matrix, right_mask, labels], cost, updates=updates, allow_input_downcast=True, on_unused_input='ignore')
-    dev_model = theano.function([left_id_matrix, left_mask, mid_id_matrix, mid_mask, right_id_matrix, right_mask, labels], layer_LR.errors(labels), allow_input_downcast=True, on_unused_input='ignore')    
+    dev_model = theano.function([left_id_matrix, left_mask, mid_id_matrix, mid_mask, right_id_matrix, right_mask, labels], layer_LR.y_pred, allow_input_downcast=True, on_unused_input='ignore')    
     test_model = theano.function([left_id_matrix, left_mask, mid_id_matrix, mid_mask, right_id_matrix, right_mask], layer_LR.y_pred, allow_input_downcast=True, on_unused_input='ignore')
     
     ###############
@@ -271,19 +271,24 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50
 
                 print 'dev...'
                 error_dev=0
+                dev_gold_labels=[]
+                dev_pred_labels=[]
                 for dev_batch_id in dev_batch_start: # for each test batch
                     batch_ids = range(dev_batch_id, dev_batch_id+batch_size)
-                    error_dev+=dev_model(dev_left_sents[batch_ids], 
+                    dev_gold_labels+=list(dev_labels[batch_ids])
+                    dev_pred_ys=dev_model(dev_left_sents[batch_ids], 
                                  dev_left_masks[batch_ids], 
                                  dev_mid_sents[batch_ids], 
                                  dev_mid_masks[batch_ids], 
                                  dev_right_sents[batch_ids], 
                                  dev_right_masks[batch_ids],
                                  dev_labels[batch_ids])
-                devacc=1.0-error_dev*1.0/len(dev_batch_start)
-                if devacc > max_acc_dev:
+                    dev_pred_labels+=list(dev_pred_ys)
+                    
+                devacc=f1_score(dev_gold_labels, dev_pred_labels, average='macro')
+                if devacc >= max_acc_dev:
                     max_acc_dev=devacc
-                    print 'current dev acc:', devacc, 'max dev acc:', max_acc_dev
+                    print 'current dev F1:', devacc, 'max dev F1:', max_acc_dev
                     gold_labels=[]
                     pred_labels=[]
                     for test_batch_id in test_batch_start: # for each test batch
@@ -303,7 +308,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50
                         max_acc_test=test_accuracy
                     print '\t\tcurrent testb F1:', test_accuracy, '\t\t\t\t\tmax_F1_test:', max_acc_test
                 else:
-                    print 'current dev acc:', devacc, 'max dev acc:', max_acc_dev
+                    print 'current dev F1:', devacc, 'max dev F1:', max_acc_dev
 
         
         print 'Epoch ', epoch, 'uses ', (time.time()-mid_time)/60.0, 'min'
@@ -321,11 +326,11 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50
 if __name__ == '__main__':
 #     evaluate_lenet5()
     #learning_rate=0.1, emb_size=50, batch_size=25, maxSentLen=20
-    lr_list=[0.1,0.05,0.01,0.005,0.001,0.2,0.3]
-    emb_list=[5,10,15,20,25,30,35,40,45,50,60,70,80,90,100,120,150,200,250,300]
+    lr_list=[0.1,0.08,0.12,0.15,0.18,0.2]
+    emb_list=[20,25,30,35,40,45,50,60,70,80,90,100,120,150,200,250,300]
     batch_list=[5,10,20,30,40,50,60,70,80,100]
     maxlen_list=[5,8,10,12,15,20,25,30]
-     
+       
     best_acc=0.0
     best_lr=0.1
     for lr in lr_list:
@@ -334,7 +339,7 @@ if __name__ == '__main__':
             best_lr=lr
             best_acc=acc_test
         print '\t\t\t\tcurrent best_F1:', best_acc
-     
+       
     best_emb=50
     for emb in emb_list:
         acc_test= evaluate_lenet5(learning_rate=best_lr, emb_size=emb)
@@ -342,7 +347,7 @@ if __name__ == '__main__':
             best_emb=emb
             best_acc=acc_test
         print '\t\t\t\tcurrent best_F1:', best_acc
-             
+               
     best_batch=20
     for batch in batch_list:
         acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=batch)
@@ -350,7 +355,7 @@ if __name__ == '__main__':
             best_batch=batch
             best_acc=acc_test
         print '\t\t\t\tcurrent best_F1:', best_acc
-                     
+                       
     best_maxlen=20        
     for maxlen in maxlen_list:
         acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=best_batch, maxSentLen=maxlen)

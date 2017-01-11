@@ -299,6 +299,8 @@ def sent_parse_relclassify(raw_sent):
         print 'ent1_left==-1 or ent1_right ==-1 or ent2_left==-1 or ent2_right ==-1:', raw_sent
         exit(0)
     else:
+        ent1_str=raw_sent[ent1_left+4:ent1_right]
+        ent2_str=raw_sent[ent2_left+4:ent2_right] 
         left_context=raw_sent[:ent1_left].strip()
         mid_context = raw_sent[ent1_right+5:ent2_left].strip()
         right_context = raw_sent[ent2_right+5:].strip()
@@ -308,7 +310,7 @@ def sent_parse_relclassify(raw_sent):
             mid_context ='<PAD>'
         if right_context =='':
             right_context ='<PAD>'
-        return left_context, mid_context, right_context
+        return left_context, ent1_str+' '+mid_context+' '+ent2_str, right_context
 
 def load_heike_rel_dataset(maxlen=20):
     root="/mounts/data/proj/wenpeng/Dataset/rel_classify_heike/"
