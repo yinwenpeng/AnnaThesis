@@ -19,7 +19,7 @@ from mlp import HiddenLayer
 
 from load_data import load_heike_rel_dataset, load_word2vec, load_word2vec_to_init
 from common_functions import create_conv_para, Conv_with_input_para, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
-def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50, batch_size=25, filter_size=3, maxSentLen=20, class_size = 19, nn='GRU'):
+def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50, batch_size=20, filter_size=3, maxSentLen=20, class_size = 19, dev_size =1500, nn='LSTM'):
     hidden_size=emb_size
     model_options = locals().copy()
     print "model options", model_options
@@ -57,17 +57,23 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50
     
     test_size = len(test_left_sents)
     
-    dev_select_ids= random.sample(range(train_size), 2)
-
+    dev_select_ids= random.sample(range(train_size), dev_size)
+    dev_left_sents = train_left_sents[dev_select_ids]
+    dev_left_masks = train_left_masks[dev_select_ids]
+    dev_mid_sents = train_mid_sents[dev_select_ids]
+    dev_mid_masks = train_mid_masks[dev_select_ids]  
+    dev_right_sents = train_right_sents[dev_select_ids]
+    dev_right_masks = train_right_masks[dev_select_ids]  
+    dev_labels =train_labels[dev_select_ids]
     
     vocab_size=  len(word2id)+1 # add one zero pad index
                     
     rand_values=rng.normal(0.0, 0.01, (vocab_size, emb_size))   #generate a matrix by Gaussian distribution
     #here, we leave code for loading word2vec to initialize words
     rand_values[0]=np.array(np.zeros(emb_size),dtype=theano.config.floatX)
-    id2word = {y:x for x,y in word2id.iteritems()}
-    word2vec=load_word2vec()
-    rand_values=load_word2vec_to_init(rand_values, id2word, word2vec)
+#     id2word = {y:x for x,y in word2id.iteritems()}
+#     word2vec=load_word2vec()
+#     rand_values=load_word2vec_to_init(rand_values, id2word, word2vec)
     embeddings=theano.shared(value=np.array(rand_values,dtype=theano.config.floatX), borrow=True)   #wrap up the python variable "rand_values" into theano variable      
     
     
@@ -205,7 +211,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50
     '''
     #train_model = theano.function([sents_id_matrix, sents_mask, labels], cost, updates=updates, on_unused_input='ignore')
     train_model = theano.function([left_id_matrix, left_mask, mid_id_matrix, mid_mask, right_id_matrix, right_mask, labels], cost, updates=updates, allow_input_downcast=True, on_unused_input='ignore')
-#     dev_model = theano.function([left_id_matrix, left_mask, mid_id_matrix, mid_mask, right_id_matrix, right_mask, labels], layer_LR.errors(labels), allow_input_downcast=True, on_unused_input='ignore')    
+    dev_model = theano.function([left_id_matrix, left_mask, mid_id_matrix, mid_mask, right_id_matrix, right_mask, labels], layer_LR.errors(labels), allow_input_downcast=True, on_unused_input='ignore')    
     test_model = theano.function([left_id_matrix, left_mask, mid_id_matrix, mid_mask, right_id_matrix, right_mask], layer_LR.y_pred, allow_input_downcast=True, on_unused_input='ignore')
     
     ###############
@@ -227,8 +233,8 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50
     '''
     n_train_batches=train_size/batch_size
     train_batch_start=list(np.arange(n_train_batches)*batch_size)+[train_size-batch_size]
-#     n_dev_batches=dev_size/batch_size
-#     dev_batch_start=list(np.arange(n_dev_batches)*batch_size)+[dev_size-batch_size]
+    n_dev_batches=dev_size/batch_size
+    dev_batch_start=list(np.arange(n_dev_batches)*batch_size)+[dev_size-batch_size]
     n_test_batches=test_size/batch_size
     test_batch_start=list(np.arange(n_test_batches)*batch_size)+[test_size-batch_size]
 
@@ -259,87 +265,100 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50
 #             if iter < len(train_batch_start)*2.0/3 and iter%100==0:
 #                 print 'Epoch ', epoch, 'iter '+str(iter)+' average cost: '+str(cost_i/iter), 'uses ', (time.time()-past_time)/60.0, 'min'
 #                 past_time = time.time()
-            if iter%100==0:
+            if iter%50==0:
                 print 'Epoch ', epoch, 'iter '+str(iter)+' average cost: '+str(cost_i/iter), 'uses ', (time.time()-past_time)/60.0, 'min'
                 past_time = time.time()
 
-
-                gold_labels=[]
-                pred_labels=[]
-                for test_batch_id in test_batch_start: # for each test batch
-                    batch_ids = range(test_batch_id, test_batch_id+batch_size)
-                    gold_labels+=list(test_labels[batch_ids])
-                    pred_ys=test_model(test_left_sents[batch_ids], 
-                                 test_left_masks[batch_ids], 
-                                 test_mid_sents[batch_ids], 
-                                 test_mid_masks[batch_ids], 
-                                 test_right_sents[batch_ids], 
-                                 test_right_masks[batch_ids])
-                    pred_labels+=list(pred_ys)
+                print 'dev...'
+                error_dev=0
+                for dev_batch_id in dev_batch_start: # for each test batch
+                    batch_ids = range(dev_batch_id, dev_batch_id+batch_size)
+                    error_dev+=dev_model(dev_left_sents[batch_ids], 
+                                 dev_left_masks[batch_ids], 
+                                 dev_mid_sents[batch_ids], 
+                                 dev_mid_masks[batch_ids], 
+                                 dev_right_sents[batch_ids], 
+                                 dev_right_masks[batch_ids],
+                                 dev_labels[batch_ids])
+                devacc=1.0-error_dev*1.0/len(dev_batch_start)
+                if devacc > max_acc_dev:
+                    max_acc_dev=devacc
+                    print 'current dev acc:', devacc, 'max dev acc:', max_acc_dev
+                    gold_labels=[]
+                    pred_labels=[]
+                    for test_batch_id in test_batch_start: # for each test batch
+                        batch_ids = range(test_batch_id, test_batch_id+batch_size)
+                        gold_labels+=list(test_labels[batch_ids])
+                        pred_ys=test_model(test_left_sents[batch_ids], 
+                                     test_left_masks[batch_ids], 
+                                     test_mid_sents[batch_ids], 
+                                     test_mid_masks[batch_ids], 
+                                     test_right_sents[batch_ids], 
+                                     test_right_masks[batch_ids])
+                        pred_labels+=list(pred_ys)
+                        
                     
-                
-                test_accuracy=f1_score(gold_labels, pred_labels, average='macro')
-                if test_accuracy > max_acc_test:
-                    max_acc_test=test_accuracy
-                print '\t\tcurrent testb F1:', test_accuracy, '\t\t\t\t\tmax_F1_test:', max_acc_test
-
+                    test_accuracy=f1_score(gold_labels, pred_labels, average='macro')
+                    if test_accuracy > max_acc_test:
+                        max_acc_test=test_accuracy
+                    print '\t\tcurrent testb F1:', test_accuracy, '\t\t\t\t\tmax_F1_test:', max_acc_test
+                else:
+                    print 'current dev acc:', devacc, 'max dev acc:', max_acc_dev
 
         
         print 'Epoch ', epoch, 'uses ', (time.time()-mid_time)/60.0, 'min'
         mid_time = time.time()
             
         #print 'Batch_size: ', update_freq
-    end_time = time.time()
 
-    print >> sys.stderr, ('The code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time) / 60.))
+
+
                     
     return max_acc_test                
                     
                     
                     
 if __name__ == '__main__':
-    evaluate_lenet5()
-    #(learning_rate=0.1, n_epochs=2000, L2_weight=0.001, emb_size=13, batch_size=50, filter_size=3, maxSentLen=60)
-#     lr_list=[0.1,0.05,0.01,0.005,0.001,0.2,0.3,0.4,0.5]
-#     emb_list=[5,10,15,20,25,30,35,40,45,50,60,70,80,90,100,120,150,200,250,300]
-#     batch_list=[5,10,20,30,40,50,60,70,80,100]
-#     maxlen_list=[5,10,15,20,25,30,35,40,45,50,55,60,65,70]
-#     
-#     best_acc=0.0
-#     best_lr=0.1
-#     for lr in lr_list:
-#         acc_test= evaluate_lenet5(learning_rate=lr)
-#         if acc_test>best_acc:
-#             best_lr=lr
-#             best_acc=acc_test
-#         print '\t\t\t\tcurrent best_acc:', best_acc
-#     
-#     best_emb=13
-#     for emb in emb_list:
-#         acc_test= evaluate_lenet5(learning_rate=best_lr, emb_size=emb)
-#         if acc_test>best_acc:
-#             best_emb=emb
-#             best_acc=acc_test
-#         print '\t\t\t\tcurrent best_acc:', best_acc
-#             
-#     best_batch=50
-#     for batch in batch_list:
-#         acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=batch)
-#         if acc_test>best_acc:
-#             best_batch=batch
-#             best_acc=acc_test
-#         print '\t\t\t\tcurrent best_acc:', best_acc
-#                     
-#     best_maxlen=60        
-#     for maxlen in maxlen_list:
-#         acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=best_batch, maxSentLen=maxlen)
-#         if acc_test>best_acc:
-#             best_maxlen=maxlen
-#             best_acc=acc_test
-#         print '\t\t\t\tcurrent best_acc:', best_acc
-#     print 'Hyper tune finished, best test acc: ', best_acc, ' by  lr: ', best_lr, ' emb: ', best_emb, ' batch: ', best_batch, ' maxlen: ', best_maxlen
+#     evaluate_lenet5()
+    #learning_rate=0.1, emb_size=50, batch_size=25, maxSentLen=20
+    lr_list=[0.1,0.05,0.01,0.005,0.001,0.2,0.3]
+    emb_list=[5,10,15,20,25,30,35,40,45,50,60,70,80,90,100,120,150,200,250,300]
+    batch_list=[5,10,20,30,40,50,60,70,80,100]
+    maxlen_list=[5,8,10,12,15,20,25,30]
+     
+    best_acc=0.0
+    best_lr=0.1
+    for lr in lr_list:
+        acc_test= evaluate_lenet5(learning_rate=lr)
+        if acc_test>best_acc:
+            best_lr=lr
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_F1:', best_acc
+     
+    best_emb=50
+    for emb in emb_list:
+        acc_test= evaluate_lenet5(learning_rate=best_lr, emb_size=emb)
+        if acc_test>best_acc:
+            best_emb=emb
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_F1:', best_acc
+             
+    best_batch=20
+    for batch in batch_list:
+        acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=batch)
+        if acc_test>best_acc:
+            best_batch=batch
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_F1:', best_acc
+                     
+    best_maxlen=20        
+    for maxlen in maxlen_list:
+        acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=best_batch, maxSentLen=maxlen)
+        if acc_test>best_acc:
+            best_maxlen=maxlen
+            best_acc=acc_test
+        print '\t\t\t\tcurrent best_F1:', best_acc
+    print 'Hyper tune finished, best test F1: ', best_acc, ' by  lr: ', best_lr, ' emb: ', best_emb, ' batch: ', best_batch, ' maxlen: ', best_maxlen
     
     
     
