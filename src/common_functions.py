@@ -1480,3 +1480,9 @@ def cosine_matrix1_matrix2_rowwise(M1, M2):
     norm1=T.sqrt(1e-20+T.sum(M1**2,axis=1)) #batch
     norm2=T.sqrt(1e-20+T.sum(M2**2,axis=1)) #batch
     return dot_prod/(norm1*norm2+1e-20)
+def cosine_tensors(tensor1, tensor2):
+    #assume tensor in shape (batch, hidden, len))
+    dot_prod=T.sum(tensor1*tensor2, axis=1) #(batch, len)
+    norm_1=T.sqrt(1e-20+T.sum(tensor1**2, axis=1)) #(batch, len)
+    norm_2=T.sqrt(1e-20+T.sum(tensor2**2, axis=1))
+    return dot_prod/(1e-20+norm_1*norm_2)#(batch, len)
