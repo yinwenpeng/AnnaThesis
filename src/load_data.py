@@ -1,4 +1,5 @@
 import numpy
+from itertools import izip
 def transfer_wordlist_2_idlist_with_maxlen(token_list, vocab_map, maxlen):
     '''
     From such as ['i', 'love', 'Munich'] to idlist [23, 129, 34], if maxlen is 5, then pad two zero in the left side, becoming [0, 0, 23, 129, 34]
@@ -367,3 +368,157 @@ def load_heike_rel_dataset(maxlen=20):
         print '\t\t\t size:', len(labels)
     print 'dataset loaded over, totally ', len(word2id), 'words'        
     return     left_sents,left_masks,mid_sents,mid_masks,right_sents,right_masks,all_labels, word2id
+
+def process_one_block_wikiQA(block, word2id, maxlen):
+    Q=''
+    AP=[]
+    AN=[]
+    for (Q_i, A_i, label_i) in block:
+        if Q!='' and Q_i!=Q:
+            print 'Q!='' and Q_i!=Q:', Q,Q_i
+            exit(0)
+        Q=Q_i
+        if label_i =='1':
+            AP.append(A_i)
+        else:
+            AN.append(A_i)
+#     if len(AP)>1:
+#         print 'more than one positive answers:', block
+#         exit(0)
+    #
+    Q_id_list=[]
+    Q_mask_list=[]
+    AP_id_list=[]
+    AP_mask_list=[]
+    AN_id_list=[]
+    AN_mask_list=[]
+    Q_id, Q_mask = transfer_wordlist_2_idlist_with_maxlen(Q.strip().split(), word2id, maxlen)
+    for ap in AP:
+        for an in AN:
+            ap_idlist, ap_masklist=transfer_wordlist_2_idlist_with_maxlen(ap.strip().split(), word2id, maxlen)
+            an_idlist, an_masklist=transfer_wordlist_2_idlist_with_maxlen(an.strip().split(), word2id, maxlen)
+            Q_id_list.append(Q_id)
+            Q_mask_list.append(Q_mask)
+            AP_id_list.append(ap_idlist)
+            AP_mask_list.append(ap_masklist)
+            AN_id_list.append(an_idlist)
+            AN_mask_list.append(an_masklist)
+    
+    return     Q_id_list,Q_mask_list,AP_id_list,AP_mask_list,AN_id_list,AN_mask_list
+        
+
+def load_wikiQA_train(filename, word2id, maxlen=20):
+    
+    Q_ids=[]
+    Q_masks=[]
+    AP_ids=[]
+    AP_masks=[]
+    AN_ids=[]
+    AN_masks=[]
+    
+    readfile=open(filename, 'r')
+    old_Q=''
+    block_store=[]
+    for line in readfile:
+        parts=line.strip().split('\t')
+        Q=parts[0]
+        A=parts[1]
+        label=parts[2]
+        if Q != old_Q:
+            if len(block_store)>0: #start a new block
+                Q_id_list, Q_mask_list, AP_id_list, AP_mask_list, AN_id_list, AN_mask_list = process_one_block_wikiQA(block_store, word2id, maxlen)
+
+                Q_ids+=Q_id_list
+                Q_masks+=Q_mask_list
+                AP_ids+=AP_id_list
+                AP_masks+=AP_mask_list
+                AN_ids+=AN_id_list
+                AN_masks+=AN_mask_list
+                
+                block_store=[]
+#             block_store.append((Q,A,label))
+            old_Q=Q
+
+        block_store.append((Q,A,label))
+    readfile.close()
+    print 'load training data over, totally size:', len(Q_ids)
+    return     Q_ids,Q_masks,AP_ids,AP_masks,AN_ids,AN_masks, word2id
+
+def load_wikiQA_devOrTest(filename, word2id, maxlen=20):
+    Q_ids=[]
+    Q_masks=[]
+    AP_ids=[]
+    AP_masks=[]
+    
+    readfile=open(filename, 'r')
+    for line in readfile:
+        parts=line.strip().split('\t')
+        Q=parts[0]
+        A=parts[1]
+#         label=parts[2]
+        Q_idlist, Q_masklist=transfer_wordlist_2_idlist_with_maxlen(Q.strip().split(), word2id, maxlen)
+        A_idlist, A_masklist=transfer_wordlist_2_idlist_with_maxlen(A.strip().split(), word2id, maxlen)
+        
+        Q_ids.append(Q_idlist)
+        Q_masks.append(Q_masklist)
+        AP_ids.append(A_idlist)
+        AP_masks.append(A_masklist)
+
+    readfile.close()
+    print 'load test or dev data over, totally size:', len(Q_ids)
+    return     Q_ids,Q_masks,AP_ids,AP_masks,word2id                
+    
+def compute_map_mrr(file, probs):
+    #file
+    testread=open(file, 'r')
+    separate=[]
+    labels=[]
+    pre_q=' '
+    line_no=0
+    for line in testread:
+        parts=line.strip().split('\t')
+        if parts[0]!=pre_q:
+            separate.append(line_no)
+        labels.append(int(parts[2]))
+        pre_q=parts[0]
+        line_no+=1
+    testread.close()
+    separate.append(line_no)#the end of file
+    #compute MAP, MRR
+    question_no=len(separate)-1
+    all_map=0.0
+    all_mrr=0.0
+    all_corr_answer=0
+    for i in range(question_no):
+        sub_labels=labels[separate[i]:separate[i+1]]
+        sub_probs=probs[separate[i]:separate[i+1]]
+        sub_dict = [(prob, label) for prob, label in izip(sub_probs, sub_labels)] # a list of tuple
+        #sorted_probs=sorted(sub_probs, reverse = True)
+        sorted_tuples=sorted(sub_dict,key=lambda tup: tup[0], reverse = True) 
+        map=0.0
+        find=False
+        corr_no=0
+        #MAP
+        for index, (prob,label) in enumerate(sorted_tuples):
+            if label==1:
+                corr_no+=1 # the no of correct answers
+                all_corr_answer+=1
+                map+=1.0*corr_no/(index+1)
+                find=True
+        #MRR
+        for index, (prob,label) in enumerate(sorted_tuples):
+            if label==1:
+                all_mrr+=1.0/(index+1)
+                break # only consider the first correct answer              
+        if find is False:
+            print 'Did not find correct answers'
+            exit(0)
+        map=map/corr_no
+        all_map+=map
+    MAP=all_map/question_no
+    MRR=all_mrr/question_no
+
+    
+    return MAP, MRR    
+    
+    
