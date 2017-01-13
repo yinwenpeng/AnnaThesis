@@ -385,7 +385,9 @@ def process_one_block_wikiQA(block, word2id, maxlen):
 #     if len(AP)>1:
 #         print 'more than one positive answers:', block
 #         exit(0)
-    #
+#     if len(AP)==0:
+#         AP.append(Q)
+    
     Q_id_list=[]
     Q_mask_list=[]
     AP_id_list=[]

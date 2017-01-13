@@ -14,10 +14,11 @@ from logistic_sgd import LogisticRegression
 from mlp import HiddenLayer
 from theano.tensor.signal import downsample
 from random import shuffle
+from cis.deep.utils.theano import debug_print
 
 from load_data import load_wikiQA_train, load_word2vec, load_word2vec_to_init, load_wikiQA_devOrTest, compute_map_mrr
 from common_functions import create_conv_para, Conv_with_input_para, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, cosine_matrix1_matrix2_rowwise, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
-def evaluate_lenet5(learning_rate=0.01, n_epochs=20, L2_weight=0.001, emb_size=50, batch_size=50, filter_size=3, maxSentLen=40, margin = 0.3, nn='LSTM'):
+def evaluate_lenet5(learning_rate=0.01, n_epochs=20, L2_weight=0.001, emb_size=50, batch_size=50, filter_size=3, maxSentLen=40, margin = 0.3, nn='CNN'):
     hidden_size=emb_size
     model_options = locals().copy()
     print "model options", model_options
@@ -96,8 +97,9 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=20, L2_weight=0.001, emb_size=5
         conv_output_Q=conv_model_Q.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
         conv_output_into_tensor3_Q=conv_output_Q.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
         mask_for_conv_output_Q=T.repeat(Q_masks[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-        masked_conv_output_Q=conv_output_into_tensor3_Q*mask_for_conv_output_Q      #mutiple mask with the conv_out to set the features by UNK to zero
-        sent_embeddings_Q=T.max(masked_conv_output_Q, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
+        mask_for_conv_output_Q=(1.0-mask_for_conv_output_Q)*(mask_for_conv_output_Q-10)
+        masked_conv_output_Q=conv_output_into_tensor3_Q+mask_for_conv_output_Q      #mutiple mask with the conv_out to set the features by UNK to zero
+        sent_embeddings_Q=debug_print(T.max(masked_conv_output_Q, axis=2),'sent_embeddings_Q') #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
      
         conv_input_AP = common_input_AP.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
         conv_model_AP = Conv_with_input_para(rng, input=conv_input_AP,
@@ -106,8 +108,9 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=20, L2_weight=0.001, emb_size=5
         conv_output_AP=conv_model_AP.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
         conv_output_into_tensor3_AP=conv_output_AP.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
         mask_for_conv_output_AP=T.repeat(AP_masks[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-        masked_conv_output_AP=conv_output_into_tensor3_AP*mask_for_conv_output_AP      #mutiple mask with the conv_out to set the features by UNK to zero
-        sent_embeddings_AP=T.max(masked_conv_output_AP, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size   
+        mask_for_conv_output_AP=(1.0-mask_for_conv_output_AP)*(mask_for_conv_output_AP-10)
+        masked_conv_output_AP=conv_output_into_tensor3_AP+mask_for_conv_output_AP      #mutiple mask with the conv_out to set the features by UNK to zero
+        sent_embeddings_AP=debug_print(T.max(masked_conv_output_AP, axis=2),'sent_embeddings_AP') #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size   
 
         conv_input_AN = common_input_AN.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
         conv_model_AN = Conv_with_input_para(rng, input=conv_input_AN,
@@ -116,8 +119,9 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=20, L2_weight=0.001, emb_size=5
         conv_output_AN=conv_model_AN.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
         conv_output_into_tensor3_AN=conv_output_AN.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
         mask_for_conv_output_AN=T.repeat(AN_masks[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-        masked_conv_output_AN=conv_output_into_tensor3_AN*mask_for_conv_output_AN      #mutiple mask with the conv_out to set the features by UNK to zero
-        sent_embeddings_AN=T.max(masked_conv_output_AN, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size    
+        mask_for_conv_output_AN=(1.0-mask_for_conv_output_AN)*(mask_for_conv_output_AN-10)
+        masked_conv_output_AN=conv_output_into_tensor3_AN+mask_for_conv_output_AN      #mutiple mask with the conv_out to set the features by UNK to zero
+        sent_embeddings_AN=debug_print(T.max(masked_conv_output_AN, axis=2),'sent_embeddings_AN') #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size    
      
     #GRU
     if nn=='GRU':
@@ -157,7 +161,8 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=20, L2_weight=0.001, emb_size=5
     simi_pos = cosine_matrix1_matrix2_rowwise(sent_embeddings_Q, sent_embeddings_AP)
     simi_neg = cosine_matrix1_matrix2_rowwise(sent_embeddings_Q, sent_embeddings_AN)
 
-    loss=T.mean(T.maximum(0.0, margin+simi_neg-simi_pos))
+    loss=T.mean(T.maximum(0.0, margin-simi_pos+simi_neg))#  +T.mean(T.maximum(0.0, margin+simi_neg))
+#     loss = T.mean(T.log(1.0+T.exp(2.0*(margin-simi_pos))) +T.log(1.0+T.exp(2.0*(margin+simi_neg))) )
     
     params = [embeddings]+NN_para
 #     L2_reg =L2norm_paraList([embeddings,conv_W, U_a])
@@ -300,7 +305,7 @@ if __name__ == '__main__':
     batch_list=[30,40,50,60,70,80,100,150,200,250,300]
     maxlen_list=[20,25,30,35,40,45,50]
     margin_list=[0.1,0.2,0.3,0.4,0.5,0.6]
-      
+       
     best_acc=(0.0,0.0)
     best_lr=0.01
     for lr in lr_list:
@@ -309,7 +314,7 @@ if __name__ == '__main__':
             best_lr=lr
             best_acc=acc_test
         print '\t\t\t\tcurrent best_acc:', best_acc
-      
+       
     best_emb=50
     for emb in emb_list:
         acc_test= evaluate_lenet5(learning_rate=best_lr, emb_size=emb)
@@ -317,7 +322,7 @@ if __name__ == '__main__':
             best_emb=emb
             best_acc=acc_test
         print '\t\t\t\tcurrent best_acc:', best_acc
-              
+               
     best_batch=50
     for batch in batch_list:
         acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=batch)
@@ -325,7 +330,7 @@ if __name__ == '__main__':
             best_batch=batch
             best_acc=acc_test
         print '\t\t\t\tcurrent best_acc:', best_acc
-                      
+                       
     best_maxlen=40        
     for maxlen in maxlen_list:
         acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=best_batch, maxSentLen=maxlen)
@@ -333,7 +338,7 @@ if __name__ == '__main__':
             best_maxlen=maxlen
             best_acc=acc_test
         print '\t\t\t\tcurrent best_acc:', best_acc
-
+ 
     best_margin=0.3        
     for mar in margin_list:
         acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=best_batch, maxSentLen=best_maxlen, margin=mar)
@@ -341,7 +346,7 @@ if __name__ == '__main__':
             best_margin=mar
             best_acc=acc_test
         print '\t\t\t\tcurrent best_acc:', best_acc
-
+ 
     print 'Hyper tune finished, best test acc: ', best_acc, ' by  lr: ', best_lr, ' emb: ', best_emb, ' batch: ', best_batch, ' maxlen: ', best_maxlen, 'margin:', best_margin
     
     
