@@ -19,7 +19,7 @@ from mlp import HiddenLayer
 
 from load_data import load_heike_rel_dataset, load_word2vec, load_word2vec_to_init
 from common_functions import create_conv_para, Conv_with_input_para, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
-def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50, batch_size=20, filter_size=3, maxSentLen=20, class_size = 19, dev_size =1500, nn='LSTM'):
+def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50, batch_size=20, filter_size=3, maxSentLen=20, class_size = 19, dev_size =1500, nn='CNN'):
     hidden_size=emb_size
     model_options = locals().copy()
     print "model options", model_options
@@ -106,7 +106,8 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50
         conv_output_left=conv_model_left.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
         conv_output_into_tensor3_left=conv_output_left.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
         mask_for_conv_output_left=T.repeat(left_mask[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-        masked_conv_output_left=conv_output_into_tensor3_left*mask_for_conv_output_left      #mutiple mask with the conv_out to set the features by UNK to zero
+        mask_for_conv_output_left=(1.0-mask_for_conv_output_left)*(mask_for_conv_output_left-10)
+        masked_conv_output_left=conv_output_into_tensor3_left+mask_for_conv_output_left      #mutiple mask with the conv_out to set the features by UNK to zero
         sent_embeddings_left=T.max(masked_conv_output_left, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
     
         conv_input_mid = common_input_mid.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
@@ -116,7 +117,8 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50
         conv_output_mid=conv_model_mid.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
         conv_output_into_tensor3_mid=conv_output_mid.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
         mask_for_conv_output_mid=T.repeat(mid_mask[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-        masked_conv_output_mid=conv_output_into_tensor3_mid*mask_for_conv_output_mid      #mutiple mask with the conv_out to set the features by UNK to zero
+        mask_for_conv_output_mid=(1.0-mask_for_conv_output_mid)*(mask_for_conv_output_mid-10)
+        masked_conv_output_mid=conv_output_into_tensor3_mid+mask_for_conv_output_mid      #mutiple mask with the conv_out to set the features by UNK to zero
         sent_embeddings_mid=T.max(masked_conv_output_mid, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
     
         conv_input_right = common_input_right.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
@@ -126,7 +128,8 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=15, L2_weight=0.001, emb_size=50
         conv_output_right=conv_model_right.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
         conv_output_into_tensor3_right=conv_output_right.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
         mask_for_conv_output_right=T.repeat(right_mask[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-        masked_conv_output_right=conv_output_into_tensor3_right*mask_for_conv_output_right      #mutiple mask with the conv_out to set the features by UNK to zero
+        mask_for_conv_output_right=(1.0-mask_for_conv_output_right)*(mask_for_conv_output_right-10)
+        masked_conv_output_right=conv_output_into_tensor3_right+mask_for_conv_output_right      #mutiple mask with the conv_out to set the features by UNK to zero
         sent_embeddings_right=T.max(masked_conv_output_right, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
     
     #GRU
