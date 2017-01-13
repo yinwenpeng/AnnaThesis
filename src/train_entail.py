@@ -17,7 +17,7 @@ from random import shuffle
 
 from load_data import load_SNLI_dataset, load_word2vec, load_word2vec_to_init
 from common_functions import create_conv_para, Conv_with_input_para, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, cosine_matrix1_matrix2_rowwise, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
-def evaluate_lenet5(learning_rate=0.1, n_epochs=4, L2_weight=0.001, emb_size=30, batch_size=50, filter_size=3, maxSentLen=50, nn='LSTM'):
+def evaluate_lenet5(learning_rate=0.1, n_epochs=4, L2_weight=0.001, emb_size=30, batch_size=50, filter_size=3, maxSentLen=50, nn='CNN'):
     hidden_size=emb_size
     model_options = locals().copy()
     print "model options", model_options
@@ -88,7 +88,8 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=4, L2_weight=0.001, emb_size=30,
         conv_output_l=conv_model_l.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
         conv_output_into_tensor3_l=conv_output_l.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
         mask_for_conv_output_l=T.repeat(sents_mask_l[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-        masked_conv_output_l=conv_output_into_tensor3_l*mask_for_conv_output_l      #mutiple mask with the conv_out to set the features by UNK to zero
+        mask_for_conv_output_l=(1.0-mask_for_conv_output_l)*(mask_for_conv_output_l-10)
+        masked_conv_output_l=conv_output_into_tensor3_l+mask_for_conv_output_l      #mutiple mask with the conv_out to set the features by UNK to zero
         sent_embeddings_l=T.max(masked_conv_output_l, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
      
         conv_input_r = common_input_r.dimshuffle((0,'x', 2,1)) #(batch_size, 1, emb_size, maxsenlen)
@@ -98,7 +99,8 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=4, L2_weight=0.001, emb_size=30,
         conv_output_r=conv_model_r.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
         conv_output_into_tensor3_r=conv_output_r.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
         mask_for_conv_output_r=T.repeat(sents_mask_r[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-        masked_conv_output_r=conv_output_into_tensor3_r*mask_for_conv_output_r      #mutiple mask with the conv_out to set the features by UNK to zero
+        mask_for_conv_output_r=(1.0-mask_for_conv_output_r)*(mask_for_conv_output_r-10)
+        masked_conv_output_r=conv_output_into_tensor3_r+mask_for_conv_output_r      #mutiple mask with the conv_out to set the features by UNK to zero
         sent_embeddings_r=T.max(masked_conv_output_r, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size   
     
      
