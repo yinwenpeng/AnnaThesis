@@ -74,7 +74,8 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=3, L2_weight=0.001, emb_size=13,
     conv_output=conv_model.narrow_conv_out #(batch, 1, hidden_size, maxsenlen-filter_size+1)    
     conv_output_into_tensor3=conv_output.reshape((batch_size, hidden_size, maxSentLen-filter_size+1))
     mask_for_conv_output=T.repeat(sents_mask[:,filter_size-1:].reshape((batch_size, 1, maxSentLen-filter_size+1)), hidden_size, axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
-    masked_conv_output=conv_output_into_tensor3*mask_for_conv_output      #mutiple mask with the conv_out to set the features by UNK to zero
+    mask_for_conv_output=(1.0-mask_for_conv_output)*(mask_for_conv_output-10)
+    masked_conv_output=conv_output_into_tensor3+mask_for_conv_output      #mutiple mask with the conv_out to set the features by UNK to zero
     sent_embeddings=T.max(masked_conv_output, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
     
     #GRU
