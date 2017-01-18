@@ -155,7 +155,7 @@ def create_rnn_para(rng, dim):
 class Conv_with_input_para(object):
     """Pool Layer of a convolutional network """
 
-    def __init__(self, rng, input, filter_shape, image_shape, W, b):
+    def __init__(self, rng, input, filter_shape, image_shape, W, b, filter_type='valid'):
         assert image_shape[1] == filter_shape[1]
         self.input = input
         self.W = W
@@ -163,17 +163,18 @@ class Conv_with_input_para(object):
 
         # convolve input feature maps with filters
         conv_out = conv.conv2d(input=input, filters=self.W,
-                filter_shape=filter_shape, image_shape=image_shape, border_mode='valid')    #here, we should pad enough zero padding for input 
+                filter_shape=filter_shape, image_shape=image_shape, border_mode=filter_type)    #here, we should pad enough zero padding for input 
         
         # add the bias term. Since the bias is a vector (1D array), we first
         # reshape it to a tensor of shape (1,n_filters,1,1). Each bias will
         # thus be broadcasted across mini-batches and feature map
         # width & height
         conv_with_bias = T.tanh(conv_out + self.b.dimshuffle('x', 0, 'x', 'x'))
+        wide_conv_out=conv_with_bias[:,:,filter_shape[2]-1,:].reshape((image_shape[0], 1, filter_shape[0], image_shape[3]+filter_shape[3]-1))
         narrow_conv_out=conv_with_bias.reshape((image_shape[0], 1, filter_shape[0], image_shape[3]-filter_shape[3]+1)) #(batch, 1, kernerl, ishape[1]-filter_size1[1]+1)
         
         self.narrow_conv_out=narrow_conv_out
-        
+        self.wide_conv_out=wide_conv_out
         #pad filter_size-1 zero embeddings at both sides
         left_padding = T.zeros((image_shape[0], 1, filter_shape[0], filter_shape[3]-1), dtype=theano.config.floatX)
         right_padding = T.zeros((image_shape[0], 1, filter_shape[0], filter_shape[3]-1), dtype=theano.config.floatX)
@@ -469,8 +470,8 @@ class LSTM_Batch_Tensor_Input_with_Mask(object):
                                     outputs_info=[T.alloc(numpy.asarray(0., dtype=theano.config.floatX),n_samples,dim_proj),
                                                   T.alloc(numpy.asarray(0., dtype=theano.config.floatX),n_samples,dim_proj)],
                                     n_steps=nsteps)
-        self.output_tensor = rval[0] # "_step" function returns two variables "h" and "c", only "h" is useful, "c" will be discarded. (nsamples, batch, hidden_size)
-        self.output_sent_rep=self.output_tensor[-1,:,:] # choose the last hidden state as sentence representation
+        self.output_tensor = rval[0].dimshuffle(1,2,0) #(batch, hidden_size, nsamples)
+        self.output_sent_rep=self.output_tensor[:,:,-1] # (batch, hidden)
 
 class GRU_Batch_Tensor_Input(object):
     def __init__(self, X, hidden_dim, U, W, b, bptt_truncate):

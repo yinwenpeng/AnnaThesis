@@ -523,4 +523,56 @@ def compute_map_mrr(file, probs):
     
     return MAP, MRR    
     
-    
+def load_POS_dataset(maxlen=40):
+
+    files=['/mounts/Users/student/wenpeng/FLORS/datasets/train-wsj-02-21', 
+           '/mounts/Users/student/wenpeng/FLORS/datasets/Google_Task/target/wsj/gweb-wsj-dev', 
+           '/mounts/Users/student/wenpeng/FLORS/datasets/Google_Task/target/wsj/gweb-wsj-test']
+    word2id={}  # store vocabulary, each word map to a id
+    pos2id={}
+    all_sentences=[]
+    all_masks=[]
+    all_labels=[]
+    for i in range(len(files)):
+        print 'loading file:', files[i], '...'
+
+        sents=[]
+        sents_masks=[]
+        labels=[]
+        readfile=open(files[i], 'r')
+        sentence_wordlist=[]
+        sentence_poslist =[]
+        for line in readfile:
+            if len(line.strip()) > 0:
+                parts=line.strip().split('\t') #word, pos
+                if len(parts)!=2:
+                    print 'len(parts)!=2:', line
+                    exit(0)
+                sentence_wordlist.append(parts[0])
+                sentence_poslist.append(parts[1])
+#                 sent_idlist, sent_masklist=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist, word2id, maxlen)
+#                 if len(parts) > minlen: # we only consider some sentences that are not too short, controlled by minlen
+#                     label=int(parts[0])-1  # keep label be 0 or 1
+#                     sentence_wordlist=parts[1:]
+#                     
+#                     labels.append(label)
+#                     sent_idlist, sent_masklist=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist, word2id, maxlen)
+#                     sents.append(sent_idlist)
+#                     sents_masks.append(sent_masklist)
+            else:#store current sentence
+                sent_idlist, sent_masklist1=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist, word2id, maxlen)                
+                pos_idlist, sent_masklist2=transfer_wordlist_2_idlist_with_maxlen(sentence_poslist, pos2id, maxlen)   
+                if       sent_masklist1 !=sent_masklist2:
+                    print        'sent_masklist1 !=sent_masklist2:', sent_masklist1,sent_masklist2
+                    exit(0)
+                sents.append(sent_idlist)
+                sents_masks.append(sent_masklist1)
+                labels.append(pos_idlist)
+                sentence_wordlist=[]
+                sentence_poslist =[]                
+        all_sentences.append(sents)
+        all_masks.append(sents_masks)
+        all_labels.append(labels)
+        print '\t\t\t size:', len(labels)
+    print 'dataset loaded over, totally ', len(word2id), 'words'        
+    return all_sentences, all_masks, all_labels, word2id, pos2id  
