@@ -363,7 +363,7 @@ class Bd_GRU_Batch_Tensor_Input_with_Mask(object):
         fwd = GRU_Batch_Tensor_Input_with_Mask(X, Mask, hidden_dim, U, W, b)
         bwd = GRU_Batch_Tensor_Input_with_Mask(X[:,:,::-1], Mask[:,::-1], hidden_dim, Ub, Wb, bb)
 
-#         output_tensor=T.concatenate([fwd.output_tensor, bwd.output_tensor[:,:,::-1]], axis=1)
+        self.output_tensor_conc=T.concatenate([fwd.output_tensor, bwd.output_tensor[:,:,::-1]], axis=1) #(batch, 2*hidden, len)
         #for word level rep
         output_tensor=fwd.output_tensor+bwd.output_tensor[:,:,::-1]
         self.output_tensor=output_tensor+X[:,:output_tensor.shape[1],:] # add initialized emb
@@ -416,6 +416,15 @@ class GRU_Batch_Tensor_Input_with_Mask(object):
         self.output_tensor=s.dimshuffle(2,1,0)  #(batch, emb_size, sentlength) again
         
         self.output_sent_rep=self.output_tensor[:,:,-1] #it means we choose the last hidden state of gru as the sentence representation, this is a matrix, as it is for batch of sentences
+
+class Bd_LSTM_Batch_Tensor_Input_with_Mask(object):
+    # Bidirectional GRU Layer.
+    def __init__(self, X, Mask, hidden_dim, fwd_params, bwd_params):
+        fwd = LSTM_Batch_Tensor_Input_with_Mask(X, Mask, hidden_dim, fwd_params)
+        bwd = LSTM_Batch_Tensor_Input_with_Mask(X[:,:,::-1], Mask[:,::-1], hidden_dim, bwd_params)
+
+        self.output_tensor_conc=T.concatenate([fwd.output_tensor, bwd.output_tensor[:,:,::-1]], axis=1) #(batch, 2*hidden, len)
+
 
 class LSTM_Batch_Tensor_Input_with_Mask(object):
 #     def __init__(self, X, Mask, hidden_dim, U, W, b):

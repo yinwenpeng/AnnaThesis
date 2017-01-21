@@ -16,7 +16,7 @@ from theano.tensor.signal import downsample
 from random import shuffle
 
 from load_data import load_POS_dataset, load_word2vec, load_word2vec_to_init
-from common_functions import create_conv_para, Conv_with_input_para, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
+from common_functions import create_conv_para, Conv_with_input_para, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, Bd_GRU_Batch_Tensor_Input_with_Mask, Bd_LSTM_Batch_Tensor_Input_with_Mask, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
 def evaluate_lenet5(learning_rate=0.1, n_epochs=5, emb_size=50, batch_size=50, filter_size=5, maxSentLen=60, nn='LSTM'):
     hidden_size=emb_size
     model_options = locals().copy()
@@ -80,25 +80,33 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=5, emb_size=50, batch_size=50, f
     #GRU
     if nn=='GRU':
         U1, W1, b1=create_GRU_para(rng, emb_size, hidden_size)
-        NN_para=[U1, W1, b1]     #U1 includes 3 matrices, W1 also includes 3 matrices b1 is bias
+        Ub, Wb, bb=create_GRU_para(rng, emb_size, hidden_size)
+        NN_para=[U1, W1, b1, Ub, Wb, bb]     #U1 includes 3 matrices, W1 also includes 3 matrices b1 is bias
         gru_input = common_input.dimshuffle((0,2,1))   #gru requires input (batch_size, emb_size, maxSentLen)
-        gru_layer=GRU_Batch_Tensor_Input_with_Mask(gru_input, sents_mask,  hidden_size, U1, W1, b1)
-        word_embeddings=gru_layer.output_tensor  # (batch_size, hidden_size, sentlen)
+#         gru_layer=GRU_Batch_Tensor_Input_with_Mask(gru_input, sents_mask,  hidden_size, U1, W1, b1)
+#         word_embeddings=gru_layer.output_tensor  # (batch_size, hidden_size, sentlen)
+        #bi-gru
+        gru_layer=Bd_GRU_Batch_Tensor_Input_with_Mask(gru_input, sents_mask,  hidden_size, U1, W1, b1, Ub, Wb, bb)
+        word_embeddings=gru_layer.output_tensor_conc  # (batch_size, 2*hidden_size, sentlen)
 
     #LSTM
     if nn=='LSTM':
         LSTM_para_dict=create_LSTM_para(rng, emb_size, hidden_size)
-        NN_para=LSTM_para_dict.values() # .values returns a list of parameters
+        LSTM_para_dict_b=create_LSTM_para(rng, emb_size, hidden_size)
+        NN_para=LSTM_para_dict.values()+LSTM_para_dict_b.values() # .values returns a list of parameters
         lstm_input = common_input.dimshuffle((0,2,1)) #LSTM has the same inpur format with GRU
-        lstm_layer=LSTM_Batch_Tensor_Input_with_Mask(lstm_input, sents_mask,  hidden_size, LSTM_para_dict)
-        word_embeddings=lstm_layer.output_tensor  # (batch_size, hidden_size)   
+#         lstm_layer=LSTM_Batch_Tensor_Input_with_Mask(lstm_input, sents_mask,  hidden_size, LSTM_para_dict)
+#         word_embeddings=lstm_layer.output_tensor  # (batch_size, hidden_size)   
+        #bi-lstm
+        lstm_layer=Bd_LSTM_Batch_Tensor_Input_with_Mask(lstm_input, sents_mask,  hidden_size, LSTM_para_dict, LSTM_para_dict_b)
+        word_embeddings=lstm_layer.output_tensor_conc  # (batch_size, (batch_size, 2*hidden_size, sentlen)
      
     #classification layer, it is just mapping from a feature vector of size "hidden_size" to a vector of only two values: positive, negative
-    U_a = create_ensemble_para(rng, pos_size, hidden_size) # the weight matrix hidden_size*2
+    U_a = create_ensemble_para(rng, pos_size, 2*hidden_size) # the weight matrix hidden_size*2
     LR_b = theano.shared(value=np.zeros((pos_size,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class  
     LR_para=[U_a, LR_b]
     LR_input = word_embeddings.dimshuffle(0,2,1).reshape((word_embeddings.shape[0]*word_embeddings.shape[2], word_embeddings.shape[1])) #(batch*sentlen, hidden)
-    layer_LR=LogisticRegression(rng, input=LR_input, n_in=hidden_size, n_out=pos_size, W=U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
+    layer_LR=LogisticRegression(rng, input=LR_input, n_in=2*hidden_size, n_out=pos_size, W=U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
     raw_loss=layer_LR.log_likelihood_each_example(labels.flatten())  #a vector
     loss = -T.sum(raw_loss*sents_mask.flatten())/T.sum(sents_mask)
     params = [embeddings]+NN_para+LR_para   # put all model parameters together
