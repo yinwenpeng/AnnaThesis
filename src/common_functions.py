@@ -7,6 +7,7 @@ from cis.deep.utils.theano import debug_print
 from logistic_sgd import LogisticRegression
 import numpy as np
 from scipy.spatial.distance import cosine
+from mlp import HiddenLayer
 
 def create_AttentionMatrix_para(rng, n_in, n_out):
 
@@ -366,7 +367,7 @@ class Bd_GRU_Batch_Tensor_Input_with_Mask(object):
         self.output_tensor_conc=T.concatenate([fwd.output_tensor, bwd.output_tensor[:,:,::-1]], axis=1) #(batch, 2*hidden, len)
         #for word level rep
         output_tensor=fwd.output_tensor+bwd.output_tensor[:,:,::-1]
-        self.output_tensor=output_tensor+X[:,:output_tensor.shape[1],:] # add initialized emb
+        self.output_tensor=output_tensor
         
         #for final sentence rep
 #         sent_output_tensor=fwd.output_tensor+bwd.output_tensor
@@ -1496,3 +1497,16 @@ def cosine_tensors(tensor1, tensor2):
     norm_1=T.sqrt(1e-20+T.sum(tensor1**2, axis=1)) #(batch, len)
     norm_2=T.sqrt(1e-20+T.sum(tensor2**2, axis=1))
     return dot_prod/(1e-20+norm_1*norm_2)#(batch, len)
+
+def BatchMatchMatrix_between_2tensors(tensor1, tensor2):
+    #assume both are (batch, hidden ,para_len), (batch, hidden ,q_len)
+    def example_in_batch(para_matrix, q_matrix):
+        #assume both are (hidden, para_len),  (hidden, q_len)
+        transpose_para_matrix=para_matrix.T  #(para_len, hidden)
+        interaction_matrix=T.dot(transpose_para_matrix, q_matrix) #(para_len, q_len)
+        return interaction_matrix
+    batch_matrix,_ = theano.scan(fn=example_in_batch,
+                                   outputs_info=None,
+                                   sequences=[tensor1, tensor2])    #batch_q_reps (batch, hidden, para_len)
+    return batch_matrix #(batch, para_len, q_len)
+    
