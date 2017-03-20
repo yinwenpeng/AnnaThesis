@@ -8,6 +8,7 @@ from logistic_sgd import LogisticRegression
 import numpy as np
 from scipy.spatial.distance import cosine
 from mlp import HiddenLayer
+import cPickle
 
 def create_AttentionMatrix_para(rng, n_in, n_out):
 
@@ -1509,4 +1510,18 @@ def BatchMatchMatrix_between_2tensors(tensor1, tensor2):
                                    outputs_info=None,
                                    sequences=[tensor1, tensor2])    #batch_q_reps (batch, hidden, para_len)
     return batch_matrix #(batch, para_len, q_len)
+
+def load_model_from_file(file_path, params):
+    #save_file = open('/mounts/data/proj/wenpeng/Dataset/WikiQACorpus/Best_Conv_Para')
+    save_file = open(file_path)
+#     save_file = open('/mounts/data/proj/wenpeng/Dataset/WikiQACorpus/Best_Conv_Para_at_22')
     
+    for para in params:
+        para.set_value(cPickle.load(save_file), borrow=True)
+    print 'model loaded successfully'
+    save_file.close()    
+def store_model_to_file(file_path, best_params):
+    save_file = open(file_path, 'wb')  # this will overwrite current contents
+    for para in best_params:
+        cPickle.dump(para.get_value(borrow=True), save_file, -1)  # the -1 is for HIGHEST_PROTOCOL
+    save_file.close()       

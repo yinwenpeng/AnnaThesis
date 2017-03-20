@@ -16,11 +16,12 @@ from theano.tensor.signal import downsample
 from random import shuffle
 
 from load_data import load_SNLI_dataset, load_word2vec, load_word2vec_to_init
-from common_functions import create_conv_para, Conv_with_input_para, BatchMatchMatrix_between_2tensors, LSTM_Batch_Tensor_Input_with_Mask, create_HiddenLayer_para, create_ensemble_para, cosine_matrix1_matrix2_rowwise, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
-def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.001, emb_size=300, hidden_size =200, batch_size=50, filter_size=3, maxSentLen=50, kmax=5, kmin=5, nn='GRU'):
+from common_functions import store_model_to_file, load_model_from_file, Bd_GRU_Batch_Tensor_Input_with_Mask, BatchMatchMatrix_between_2tensors, LSTM_Batch_Tensor_Input_with_Mask, create_HiddenLayer_para, create_ensemble_para, cosine_matrix1_matrix2_rowwise, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
+def evaluate_lenet5(learning_rate=0.001, n_epochs=100, L2_weight=0.001, emb_size=300, hidden_size =100, batch_size=800, filter_size=3, maxSentLen=50, kmax=5, kmin=5, margin=0.2, nn='GRU'):
 #     hidden_size=emb_size
     model_options = locals().copy()
     print "model options", model_options
+    storePath = '/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/'
     
     rng = np.random.RandomState(1234)    #random seed, control the model generates the same results 
 
@@ -75,71 +76,80 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.001, emb_size=30
     common_input_l=embeddings[sents_ids_l.flatten()].reshape((batch_size,maxSentLen, emb_size)) #the input format can be adapted into CNN or GRU or LSTM
     common_input_r=embeddings[sents_ids_r.flatten()].reshape((batch_size,maxSentLen, emb_size))
     
-    #GRU
-    if nn=='GRU':
-        U1, W1, b1=create_GRU_para(rng, emb_size, hidden_size)
-        NN_para=[U1, W1, b1]     #U1 includes 3 matrices, W1 also includes 3 matrices b1 is bias
-        
-        
-        
-        
-        
-        gru_input_l = common_input_l.dimshuffle((0,2,1))   #gru requires input (batch_size, emb_size, maxSentLen)
-        gru_input_r = common_input_r.dimshuffle((0,2,1))   #gru requires input (batch_size, emb_size, maxSentLen)
-        gru_layer_l=GRU_Batch_Tensor_Input_with_Mask(gru_input_l, sents_mask_l,  hidden_size, U1, W1, b1)
-        gru_layer_r=GRU_Batch_Tensor_Input_with_Mask(gru_input_r, sents_mask_r,  hidden_size, U1, W1, b1)
-        
-        sent_l_hidden_tensor = gru_layer_l.output_tensor
-        sent_r_hidden_tensor = gru_layer_r.output_tensor
-        
-        batch_attention_tensor = BatchMatchMatrix_between_2tensors(sent_l_hidden_tensor, sent_r_hidden_tensor) #(batch, len_l, len_r)
-        maxpool_l= T.max(batch_attention_tensor, axis=2) #(batch, len_l)
-        maxpool_r= T.max(batch_attention_tensor, axis=1) #(batch, len_r)
-        
-        
-        neighborsArgSorted_l = T.argsort(maxpool_l,axis=1) #(batch, len_l)
-        kmin_indices_l = neighborsArgSorted_l[:,:kmin] #(batch, kmin)
-        kmax_indices_l = neighborsArgSorted_l[:,-kmax:] #(batch, kmax)
-        kmin_indices_l_sorted = T.sort(kmin_indices_l, axis=1) #(batch, kmin)
-        kmax_indices_l_sorted = T.sort(kmax_indices_l, axis=1) #(batch, kmax)
-        
-        sent_l_2_matrix = sent_l_hidden_tensor.dimshuffle(0,2,1).reshape((sent_l_hidden_tensor.shape[0]*sent_l_hidden_tensor.shape[2],sent_l_hidden_tensor.shape[1]))
-        sent_l_selected_kmin = sent_l_2_matrix[kmin_indices_l_sorted.flatten()].reshape((sent_l_hidden_tensor.shape[0],kmin,sent_l_hidden_tensor.shape[1])).dimshuffle(0,2,1)
-        sent_l_selected_kmax = sent_l_2_matrix[kmax_indices_l_sorted.flatten()].reshape((sent_l_hidden_tensor.shape[0],kmax,sent_l_hidden_tensor.shape[1])).dimshuffle(0,2,1)
+
+    U1, W1, b1=create_GRU_para(rng, emb_size, hidden_size)
+    U2, W2, b2=create_GRU_para(rng, hidden_size, hidden_size)
+    NN_para=[U1, W1, b1,U2, W2, b2]     #U1 includes 3 matrices, W1 also includes 3 matrices b1 is bias
     
     
-        neighborsArgSorted_r = T.argsort(maxpool_r,axis=1) #(batch, len_r)
-        kmin_indices_r = neighborsArgSorted_r[:,:kmin] #(batch, kmin)
-        kmax_indices_r = neighborsArgSorted_r[:,-kmax:] #(batch, kmax)
-        kmin_indices_r_sorted = T.sort(kmin_indices_r, axis=1) #(batch, kmin)
-        kmax_indices_r_sorted = T.sort(kmax_indices_r, axis=1) #(batch, kmax)
-        
-        sent_r_2_matrix = sent_r_hidden_tensor.dimshuffle(0,2,1).reshape((sent_r_hidden_tensor.shape[0]*sent_r_hidden_tensor.shape[2],sent_r_hidden_tensor.shape[1]))
-        sent_r_selected_kmin = sent_r_2_matrix[kmin_indices_r_sorted.flatten()].reshape((sent_r_hidden_tensor.shape[0],kmin,sent_r_hidden_tensor.shape[1])).dimshuffle(0,2,1)
-        sent_r_selected_kmax = sent_r_2_matrix[kmax_indices_r_sorted.flatten()].reshape((sent_r_hidden_tensor.shape[0],kmax,sent_r_hidden_tensor.shape[1])).dimshuffle(0,2,1)
     
     
+    
+    gru_input_l = common_input_l.dimshuffle((0,2,1))   #gru requires input (batch_size, emb_size, maxSentLen)
+    gru_input_r = common_input_r.dimshuffle((0,2,1))   #gru requires input (batch_size, emb_size, maxSentLen)
+    gru_layer_l=GRU_Batch_Tensor_Input_with_Mask(gru_input_l, sents_mask_l,  hidden_size, U1, W1, b1)
+    gru_layer_r=GRU_Batch_Tensor_Input_with_Mask(gru_input_r, sents_mask_r,  hidden_size, U1, W1, b1)
+    
+    sent_l_rep = gru_layer_l.output_sent_rep#.output_sent_rep_maxpooling
+    sent_r_rep = gru_layer_r.output_sent_rep#.output_sent_rep_maxpooling
+    
+    sent_l_hidden_tensor = gru_layer_l.output_tensor
+    sent_r_hidden_tensor = gru_layer_r.output_tensor
+    
+    batch_attention_tensor = BatchMatchMatrix_between_2tensors(sent_l_hidden_tensor, sent_r_hidden_tensor) #(batch, len_l, len_r)
+    maxpool_l= T.max(batch_attention_tensor, axis=2) #(batch, len_l)
+    maxpool_r= T.max(batch_attention_tensor, axis=1) #(batch, len_r)
+    
+    
+    neighborsArgSorted_l = T.argsort(maxpool_l,axis=1) #(batch, len_l)
+    kmin_indices_l = neighborsArgSorted_l[:,:kmin] #(batch, kmin)
+    kmax_indices_l = neighborsArgSorted_l[:,-kmax:] #(batch, kmax)
+    kmin_indices_l_sorted = T.sort(kmin_indices_l, axis=1) #(batch, kmin)
+    kmax_indices_l_sorted = T.sort(kmax_indices_l, axis=1) #(batch, kmax)
+    
+    sent_l_2_matrix = sent_l_hidden_tensor.dimshuffle(0,2,1).reshape((sent_l_hidden_tensor.shape[0]*sent_l_hidden_tensor.shape[2],sent_l_hidden_tensor.shape[1]))
+    sent_l_selected_kmin = sent_l_2_matrix[kmin_indices_l_sorted.flatten()].reshape((sent_l_hidden_tensor.shape[0],kmin,sent_l_hidden_tensor.shape[1])).dimshuffle(0,2,1)
+    sent_l_selected_kmax = sent_l_2_matrix[kmax_indices_l_sorted.flatten()].reshape((sent_l_hidden_tensor.shape[0],kmax,sent_l_hidden_tensor.shape[1])).dimshuffle(0,2,1)
 
 
-    #LSTM
-    if nn=='LSTM':
-        LSTM_para_dict=create_LSTM_para(rng, emb_size, hidden_size)
-        NN_para=LSTM_para_dict.values() # .values returns a list of parameters
-        lstm_input_l = common_input_l.dimshuffle((0,2,1)) #LSTM has the same inpur format with GRU
-        lstm_layer_l=LSTM_Batch_Tensor_Input_with_Mask(lstm_input_l, sents_mask_l,  hidden_size, LSTM_para_dict)
-        sent_embeddings_l=lstm_layer_l.output_sent_rep  # (batch_size, hidden_size)   
-        lstm_input_r = common_input_r.dimshuffle((0,2,1)) #LSTM has the same inpur format with GRU
-        lstm_layer_r=LSTM_Batch_Tensor_Input_with_Mask(lstm_input_r, sents_mask_r,  hidden_size, LSTM_para_dict)
-        sent_embeddings_r=lstm_layer_r.output_sent_rep  # (batch_size, hidden_size)      
+    neighborsArgSorted_r = T.argsort(maxpool_r,axis=1) #(batch, len_r)
+    kmin_indices_r = neighborsArgSorted_r[:,:kmin] #(batch, kmin)
+    kmax_indices_r = neighborsArgSorted_r[:,-kmax:] #(batch, kmax)
+    kmin_indices_r_sorted = T.sort(kmin_indices_r, axis=1) #(batch, kmin)
+    kmax_indices_r_sorted = T.sort(kmax_indices_r, axis=1) #(batch, kmax)
+    
+    sent_r_2_matrix = sent_r_hidden_tensor.dimshuffle(0,2,1).reshape((sent_r_hidden_tensor.shape[0]*sent_r_hidden_tensor.shape[2],sent_r_hidden_tensor.shape[1]))
+    sent_r_selected_kmin = sent_r_2_matrix[kmin_indices_r_sorted.flatten()].reshape((sent_r_hidden_tensor.shape[0],kmin,sent_r_hidden_tensor.shape[1])).dimshuffle(0,2,1)
+    sent_r_selected_kmax = sent_r_2_matrix[kmax_indices_r_sorted.flatten()].reshape((sent_r_hidden_tensor.shape[0],kmax,sent_r_hidden_tensor.shape[1])).dimshuffle(0,2,1)
+
+
+   
     
     
-    sent_l_kmin_batch = sent_l_selected_kmin.dimshuffle(0,2,1).reshape((sent_l_hidden_tensor.shape[0],kmin*sent_l_hidden_tensor.shape[1]))
-    sent_l_kmax_batch = sent_l_selected_kmax.dimshuffle(0,2,1).reshape((sent_l_hidden_tensor.shape[0],kmax*sent_l_hidden_tensor.shape[1]))
-    sent_r_kmin_batch = sent_r_selected_kmin.dimshuffle(0,2,1).reshape((sent_r_hidden_tensor.shape[0],kmin*sent_r_hidden_tensor.shape[1]))
-    sent_r_kmax_batch = sent_r_selected_kmax.dimshuffle(0,2,1).reshape((sent_r_hidden_tensor.shape[0],kmax*sent_r_hidden_tensor.shape[1]))
+#     sent_l_kmin_batch = sent_l_selected_kmin.dimshuffle(0,2,1).reshape((sent_l_hidden_tensor.shape[0],kmin*sent_l_hidden_tensor.shape[1]))
+#     sent_l_kmax_batch = sent_l_selected_kmax.dimshuffle(0,2,1).reshape((sent_l_hidden_tensor.shape[0],kmax*sent_l_hidden_tensor.shape[1]))
+#     sent_r_kmin_batch = sent_r_selected_kmin.dimshuffle(0,2,1).reshape((sent_r_hidden_tensor.shape[0],kmin*sent_r_hidden_tensor.shape[1]))
+#     sent_r_kmax_batch = sent_r_selected_kmax.dimshuffle(0,2,1).reshape((sent_r_hidden_tensor.shape[0],kmax*sent_r_hidden_tensor.shape[1]))
+    
+    l_kmin_gru=GRU_Batch_Tensor_Input_with_Mask(sent_l_selected_kmin, T.ones_like(sent_l_selected_kmin)[:,0,:],  hidden_size, U2, W2, b2)
+    l_kmax_gru=GRU_Batch_Tensor_Input_with_Mask(sent_l_selected_kmax, T.ones_like(sent_l_selected_kmax)[:,0,:],  hidden_size, U2, W2, b2)
+    r_kmin_gru=GRU_Batch_Tensor_Input_with_Mask(sent_r_selected_kmin, T.ones_like(sent_r_selected_kmin)[:,0,:],  hidden_size, U2, W2, b2)
+    r_kmax_gru=GRU_Batch_Tensor_Input_with_Mask(sent_r_selected_kmax, T.ones_like(sent_r_selected_kmax)[:,0,:],  hidden_size, U2, W2, b2)
+    
+    sent_l_kmin_batch = l_kmin_gru.output_sent_rep
+    sent_l_kmax_batch = l_kmax_gru.output_sent_rep
+    sent_r_kmin_batch = r_kmin_gru.output_sent_rep
+    sent_r_kmax_batch = r_kmax_gru.output_sent_rep
+    
+    cos_kminkmin = cosine_matrix1_matrix2_rowwise(sent_l_kmin_batch, sent_r_kmin_batch).dimshuffle(0,'x')
+    cos_kmaxkmax = cosine_matrix1_matrix2_rowwise(sent_l_kmax_batch, sent_r_kmax_batch).dimshuffle(0,'x')
+    cos_kminkmax = cosine_matrix1_matrix2_rowwise(sent_l_kmin_batch, sent_r_kmax_batch).dimshuffle(0,'x')
+    cos_kmaxkmin = cosine_matrix1_matrix2_rowwise(sent_l_kmax_batch, sent_r_kmin_batch).dimshuffle(0,'x')    
+    cos_overall = cosine_matrix1_matrix2_rowwise(sent_l_rep, sent_r_rep).dimshuffle(0,'x')
+    cos_features= T.concatenate([cos_kminkmin,cos_kmaxkmax,cos_kminkmax,cos_kmaxkmin,cos_overall],axis=1)
         
-    HL_layer_1_input = T.concatenate([sent_l_kmin_batch,sent_l_kmax_batch, sent_r_kmin_batch,sent_r_kmax_batch],axis=1)
-    HL_layer_1_input_size = 2*(kmin*hidden_size+kmax*hidden_size)
+    HL_layer_1_input = T.concatenate([sent_l_kmin_batch,sent_l_kmax_batch, sent_r_kmin_batch,sent_r_kmax_batch, sent_l_rep, sent_r_rep,cos_features],axis=1)
+    HL_layer_1_input_size = 2*(1*hidden_size+1*hidden_size)+2*hidden_size+5
     HL_layer_1=HiddenLayer(rng, input=HL_layer_1_input, n_in=HL_layer_1_input_size, n_out=hidden_size, activation=T.tanh)
     HL_layer_2=HiddenLayer(rng, input=HL_layer_1.output, n_in=hidden_size, n_out=hidden_size, activation=T.tanh)
 
@@ -150,14 +160,23 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.001, emb_size=30
     LR_para=[U_a, LR_b]
     
     LR_input=T.concatenate([HL_layer_1.output, HL_layer_2.output],axis=1) #HL_layer_1_input, 
-    layer_LR=LogisticRegression(rng, input=T.tanh(LR_input), n_in=LR_input_size, n_out=3, W=U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
-    loss=layer_LR.negative_log_likelihood(labels)  #for classification task, we usually used negative log likelihood as loss, the lower the better.
+#     layer_LR=LogisticRegression(rng, input=T.tanh(LR_input), n_in=LR_input_size, n_out=3, W=U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
+#     loss=layer_LR.negative_log_likelihood(labels)  #for classification task, we usually used negative log likelihood as loss, the lower the better.
     
-    params = [embeddings]+NN_para+LR_para+HL_layer_1.params+HL_layer_2.params#+ref_para   # put all model parameters together
-#     L2_reg =L2norm_paraList([embeddings,conv_W, U_a])
-#     diversify_reg= Diversify_Reg(U_a.T)+Diversify_Reg(conv_W_into_matrix)
+    rank_scores = T.tanh(LR_input.dot(U_a)) #(batch, 3)
+    pos_scores = rank_scores[T.arange(batch_size),labels]
+    neg_scores = T.set_subtensor(rank_scores[T.arange(batch_size),labels], -1.0)
+    loss = T.mean(T.maximum(0.0, margin-pos_scores.dimshuffle(0,'x')+neg_scores))
+    pred_argmax = T.argmax(rank_scores, axis=1)
+    error_batch = T.sum(T.neq(pred_argmax,labels))*1.0/batch_size
+    
+    
+    
+    params_load = [embeddings]+NN_para+LR_para+HL_layer_1.params+HL_layer_2.params#+ref_para   # put all model parameters together
+    load_model_from_file(storePath+'Best_Paras_20170319_0.809', params_load)
+    params = [embeddings]+NN_para+[U_a]+HL_layer_1.params+HL_layer_2.params
 
-    cost=loss+1e-6*(T.sum(HL_layer_1.W**2)+T.sum(HL_layer_2.W**2)+T.sum(U_a**2))
+    cost=loss#+1e-6*(T.sum(HL_layer_1.W**2)+T.sum(HL_layer_2.W**2)+T.sum(U_a**2))
     
     grads = T.grad(cost, params)    # create a list of gradients for all model parameters
     accumulator=[]
@@ -173,8 +192,8 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.001, emb_size=30
 
     #train_model = theano.function([sents_id_matrix, sents_mask, labels], cost, updates=updates, on_unused_input='ignore')
     train_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, labels], cost, updates=updates, allow_input_downcast=True, on_unused_input='ignore')
-    dev_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, labels], layer_LR.errors(labels), allow_input_downcast=True, on_unused_input='ignore')    
-    test_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, labels], layer_LR.errors(labels), allow_input_downcast=True, on_unused_input='ignore')
+    dev_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, labels], error_batch, allow_input_downcast=True, on_unused_input='ignore')    
+    test_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, labels], error_batch, allow_input_downcast=True, on_unused_input='ignore')
     
     ###############
     # TRAIN MODEL #
@@ -237,6 +256,8 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.001, emb_size=30
                 if dev_accuracy > max_acc_dev:
                     max_acc_dev=dev_accuracy
                     print 'current dev_accuracy:', dev_accuracy, '\t\t\t\t\tmax max_acc_dev:', max_acc_dev
+                    store_model_to_file(storePath+'Best_Paras_20170320_'+str(max_acc_dev), params)
+                    print 'Finished storing best  params at:', max_acc_dev
                     #best dev model, do test
 #                     error_sum=0.0
 #                     for test_batch_id in test_batch_start: # for each test batch
