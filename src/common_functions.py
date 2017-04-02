@@ -374,8 +374,8 @@ class Bd_GRU_Batch_Tensor_Input_with_Mask(object):
 #         sent_output_tensor=fwd.output_tensor+bwd.output_tensor
 #         self.output_tensor=output_tensor+X # add initialized emb
 #         self.output_sent_rep=self.output_tensor[:,:,-1]
-        self.output_sent_rep_maxpooling=fwd.output_tensor[:,:,-1]+bwd.output_tensor[:,:,-1]
-#         self.output_sent_rep_maxpooling=T.concatenate([fwd.output_tensor[:,:,-1], bwd.output_tensor[:,:,-1]], axis=1)
+        self.output_sent_rep=fwd.output_tensor[:,:,-1]+bwd.output_tensor[:,:,-1]
+        self.output_sent_rep_conc=T.concatenate([fwd.output_tensor[:,:,-1], bwd.output_tensor[:,:,-1]], axis=1)
 
 class GRU_Batch_Tensor_Input_with_Mask(object):
     def __init__(self, X, Mask, hidden_dim, U, W, b):
