@@ -1,5 +1,13 @@
+# -*- coding: utf-8 -*-
 import numpy
+import codecs
+import string
+import nltk
+from nltk.stem import SnowballStemmer
 from itertools import izip
+import re
+
+_digits = re.compile('\d')
 def transfer_wordlist_2_idlist_with_maxlen(token_list, vocab_map, maxlen):
     '''
     From such as ['i', 'love', 'Munich'] to idlist [23, 129, 34], if maxlen is 5, then pad two zero in the left side, becoming [0, 0, 23, 129, 34]
@@ -20,7 +28,7 @@ def transfer_wordlist_2_idlist_with_maxlen(token_list, vocab_map, maxlen):
         idlist=idlist[:maxlen]
         mask_list=mask_list[:maxlen]
     return idlist, mask_list
-    
+
 
 def load_sentiment_dataset(maxlen=40, minlen=4):
     root="/mounts/data/proj/wenpeng/Dataset/StanfordSentiment/stanfordSentimentTreebank/2classes/"
@@ -41,7 +49,7 @@ def load_sentiment_dataset(maxlen=40, minlen=4):
             if len(parts) > minlen: # we only consider some sentences that are not too short, controlled by minlen
                 label=int(parts[0])-1  # keep label be 0 or 1
                 sentence_wordlist=parts[1:]
-                
+
                 labels.append(label)
                 sent_idlist, sent_masklist=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist, word2id, maxlen)
                 sents.append(sent_idlist)
@@ -50,30 +58,30 @@ def load_sentiment_dataset(maxlen=40, minlen=4):
         all_masks.append(sents_masks)
         all_labels.append(labels)
         print '\t\t\t size:', len(labels)
-    print 'dataset loaded over, totally ', len(word2id), 'words'        
+    print 'dataset loaded over, totally ', len(word2id), 'words'
     return all_sentences, all_masks, all_labels, word2id
-            
+
 def load_word2vec():
     word2vec = {}
-    
+
     print "==> loading 300d word2vec"
 #     with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "data/glove/glove.6B." + str(dim) + "d.txt")) as f:
     f=open('/mounts/data/proj/wenpeng/Dataset/glove.6B.300d.txt', 'r')#word2vec_words_300d.txt, glove.6B.50d.txt
-    for line in f:    
+    for line in f:
         l = line.split()
         word2vec[l[0]] = map(float, l[1:])
-            
+
     print "==> word2vec is loaded"
-    
-    return word2vec 
+
+    return word2vec
 def load_word2vec_to_init(rand_values, ivocab, word2vec):
-    
+
     for id, word in ivocab.iteritems():
         emb=word2vec.get(word)
         if emb is not None:
             rand_values[id]=numpy.array(emb)
     print '==> use word2vec initialization over...'
-    return rand_values            
+    return rand_values
 
 def load_SNLI_dataset(maxlen=40):
     root="/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/"
@@ -120,8 +128,8 @@ def load_SNLI_dataset(maxlen=40):
         all_masks_r.append(sents_masks_r)
         all_labels.append(labels)
         print '\t\t\t size:', len(labels), 'pairs'
-    print 'dataset loaded over, totally ', len(word2id), 'words, max sen len:',   max_sen_len       
-    return all_sentences_l, all_masks_l, all_sentences_r, all_masks_r,all_labels, word2id           
+    print 'dataset loaded over, totally ', len(word2id), 'words, max sen len:',   max_sen_len
+    return all_sentences_l, all_masks_l, all_sentences_r, all_masks_r,all_labels, word2id
 
 def load_guu_data_4_CompTransE(maxPathLen=20):
     rootPath='/mounts/data/proj/wenpeng/Dataset/FB_socher/path/'
@@ -136,7 +144,7 @@ def load_guu_data_4_CompTransE(maxPathLen=20):
     rel2tailset={}
     ent2relset={}
     ent2relset_maxSetSize=0
-    
+
     train_paths_store=[]
     train_ents_store=[]
     train_masks_store=[]
@@ -217,7 +225,7 @@ def load_guu_data_4_CompTransE(maxPathLen=20):
                 elif file_id ==1:
                     dev_paths_store.append(one_path)
                     dev_ents_store.append(ent_path)
-                    dev_masks_store.append(one_mask)                    
+                    dev_masks_store.append(one_mask)
                 else:
                     test_paths_store.append(one_path)
                     test_ents_store.append(ent_path)
@@ -288,8 +296,8 @@ def add_ent2relset(ent_path, one_path, ent2relset, maxSetSize):
             relset.add(rel_id)
             if len(relset) > maxSetSize:
                 maxSetSize=len(relset)
-            ent2relset[ent_id]=relset 
-    return maxSetSize 
+            ent2relset[ent_id]=relset
+    return maxSetSize
 
 def sent_parse_relclassify(raw_sent):
     ent1_left=raw_sent.find('<e1>')
@@ -301,7 +309,7 @@ def sent_parse_relclassify(raw_sent):
         exit(0)
     else:
         ent1_str=raw_sent[ent1_left+4:ent1_right]
-        ent2_str=raw_sent[ent2_left+4:ent2_right] 
+        ent2_str=raw_sent[ent2_left+4:ent2_right]
         left_context=raw_sent[:ent1_left].strip()
         mid_context = raw_sent[ent1_right+5:ent2_left].strip()
         right_context = raw_sent[ent2_right+5:].strip()
@@ -345,12 +353,12 @@ def load_heike_rel_dataset(maxlen=20):
                 left_context, mid_context, right_context = sent_parse_relclassify(raw_sent)
 
 
-                
-                
+
+
                 left_idlist, left_masklist=transfer_wordlist_2_idlist_with_maxlen(left_context.split(), word2id, maxlen)
                 mid_idlist, mid_masklist=transfer_wordlist_2_idlist_with_maxlen(mid_context.split(), word2id, maxlen)
                 right_idlist, right_masklist=transfer_wordlist_2_idlist_with_maxlen(right_context.split(), word2id, maxlen)
-                
+
                 left_s.append(left_idlist)
                 left_m.append(left_masklist)
                 mid_s.append(mid_idlist)
@@ -366,7 +374,7 @@ def load_heike_rel_dataset(maxlen=20):
         right_masks.append(right_m)
         all_labels.append(labels)
         print '\t\t\t size:', len(labels)
-    print 'dataset loaded over, totally ', len(word2id), 'words'        
+    print 'dataset loaded over, totally ', len(word2id), 'words'
     return     left_sents,left_masks,mid_sents,mid_masks,right_sents,right_masks,all_labels, word2id
 
 def process_one_block_wikiQA(block, word2id, maxlen):
@@ -387,7 +395,7 @@ def process_one_block_wikiQA(block, word2id, maxlen):
 #         exit(0)
 #     if len(AP)==0:
 #         AP.append(Q)
-    
+
     Q_id_list=[]
     Q_mask_list=[]
     AP_id_list=[]
@@ -405,19 +413,19 @@ def process_one_block_wikiQA(block, word2id, maxlen):
             AP_mask_list.append(ap_masklist)
             AN_id_list.append(an_idlist)
             AN_mask_list.append(an_masklist)
-    
+
     return     Q_id_list,Q_mask_list,AP_id_list,AP_mask_list,AN_id_list,AN_mask_list
-        
+
 
 def load_wikiQA_train(filename, word2id, maxlen=20):
-    
+
     Q_ids=[]
     Q_masks=[]
     AP_ids=[]
     AP_masks=[]
     AN_ids=[]
     AN_masks=[]
-    
+
     readfile=open(filename, 'r')
     old_Q=''
     block_store=[]
@@ -436,7 +444,7 @@ def load_wikiQA_train(filename, word2id, maxlen=20):
                 AP_masks+=AP_mask_list
                 AN_ids+=AN_id_list
                 AN_masks+=AN_mask_list
-                
+
                 block_store=[]
 #             block_store.append((Q,A,label))
             old_Q=Q
@@ -451,7 +459,7 @@ def load_wikiQA_devOrTest(filename, word2id, maxlen=20):
     Q_masks=[]
     AP_ids=[]
     AP_masks=[]
-    
+
     readfile=open(filename, 'r')
     for line in readfile:
         parts=line.strip().split('\t')
@@ -460,7 +468,7 @@ def load_wikiQA_devOrTest(filename, word2id, maxlen=20):
 #         label=parts[2]
         Q_idlist, Q_masklist=transfer_wordlist_2_idlist_with_maxlen(Q.strip().split(), word2id, maxlen)
         A_idlist, A_masklist=transfer_wordlist_2_idlist_with_maxlen(A.strip().split(), word2id, maxlen)
-        
+
         Q_ids.append(Q_idlist)
         Q_masks.append(Q_masklist)
         AP_ids.append(A_idlist)
@@ -468,11 +476,11 @@ def load_wikiQA_devOrTest(filename, word2id, maxlen=20):
 
     readfile.close()
     print 'load test or dev data over, totally size:', len(Q_ids)
-    return     Q_ids,Q_masks,AP_ids,AP_masks,word2id                
-    
-def compute_map_mrr(file, probs):
+    return     Q_ids,Q_masks,AP_ids,AP_masks,word2id
+
+def compute_map_mrr(filename, probs):
     #file
-    testread=open(file, 'r')
+    testread=open(filename, 'r')
     separate=[]
     labels=[]
     pre_q=' '
@@ -491,15 +499,17 @@ def compute_map_mrr(file, probs):
     all_map=0.0
     all_mrr=0.0
     all_corr_answer=0
+    all_acc=0.0
     for i in range(question_no):
         sub_labels=labels[separate[i]:separate[i+1]]
         sub_probs=probs[separate[i]:separate[i+1]]
         sub_dict = [(prob, label) for prob, label in izip(sub_probs, sub_labels)] # a list of tuple
         #sorted_probs=sorted(sub_probs, reverse = True)
-        sorted_tuples=sorted(sub_dict,key=lambda tup: tup[0], reverse = True) 
+        sorted_tuples=sorted(sub_dict,key=lambda tup: tup[0], reverse = True)
         map=0.0
         find=False
         corr_no=0
+
         #MAP
         for index, (prob,label) in enumerate(sorted_tuples):
             if label==1:
@@ -507,26 +517,30 @@ def compute_map_mrr(file, probs):
                 all_corr_answer+=1
                 map+=1.0*corr_no/(index+1)
                 find=True
+                if index ==0:
+                    all_acc+=1
         #MRR
         for index, (prob,label) in enumerate(sorted_tuples):
             if label==1:
                 all_mrr+=1.0/(index+1)
-                break # only consider the first correct answer              
-        if find is False:
-            print 'Did not find correct answers'
-            exit(0)
-        map=map/corr_no
+                break # only consider the first correct answer
+
+        if corr_no ==0:
+            map=0.0
+        else:
+            map=map/corr_no
         all_map+=map
     MAP=all_map/question_no
     MRR=all_mrr/question_no
+    ACC=all_acc/question_no
 
-    
-    return MAP, MRR    
-    
+
+    return MAP, MRR, ACC
+
 def load_POS_dataset(maxlen=40):
 
-    files=['/mounts/Users/student/wenpeng/FLORS/datasets/train-wsj-02-21', 
-           '/mounts/Users/student/wenpeng/FLORS/datasets/Google_Task/target/wsj/gweb-wsj-dev', 
+    files=['/mounts/Users/student/wenpeng/FLORS/datasets/train-wsj-02-21',
+           '/mounts/Users/student/wenpeng/FLORS/datasets/Google_Task/target/wsj/gweb-wsj-dev',
            '/mounts/Users/student/wenpeng/FLORS/datasets/Google_Task/target/wsj/gweb-wsj-test']
     word2id={}  # store vocabulary, each word map to a id
     pos2id={}
@@ -554,14 +568,14 @@ def load_POS_dataset(maxlen=40):
 #                 if len(parts) > minlen: # we only consider some sentences that are not too short, controlled by minlen
 #                     label=int(parts[0])-1  # keep label be 0 or 1
 #                     sentence_wordlist=parts[1:]
-#                     
+#
 #                     labels.append(label)
 #                     sent_idlist, sent_masklist=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist, word2id, maxlen)
 #                     sents.append(sent_idlist)
 #                     sents_masks.append(sent_masklist)
             else:#store current sentence
-                sent_idlist, sent_masklist1=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist, word2id, maxlen)                
-                pos_idlist, sent_masklist2=transfer_wordlist_2_idlist_with_maxlen(sentence_poslist, pos2id, maxlen)   
+                sent_idlist, sent_masklist1=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist, word2id, maxlen)
+                pos_idlist, sent_masklist2=transfer_wordlist_2_idlist_with_maxlen(sentence_poslist, pos2id, maxlen)
                 if       sent_masklist1 !=sent_masklist2:
                     print        'sent_masklist1 !=sent_masklist2:', sent_masklist1,sent_masklist2
                     exit(0)
@@ -569,10 +583,329 @@ def load_POS_dataset(maxlen=40):
                 sents_masks.append(sent_masklist1)
                 labels.append(pos_idlist)
                 sentence_wordlist=[]
-                sentence_poslist =[]                
+                sentence_poslist =[]
         all_sentences.append(sents)
         all_masks.append(sents_masks)
         all_labels.append(labels)
         print '\t\t\t size:', len(labels)
-    print 'dataset loaded over, totally ', len(word2id), 'words'        
-    return all_sentences, all_masks, all_labels, word2id, pos2id  
+    print 'dataset loaded over, totally ', len(word2id), 'words'
+    return all_sentences, all_masks, all_labels, word2id, pos2id
+
+def load_duyu_marco_dataset(maxlen_q=15, maxlen_s=40):
+    root="/mounts/data/proj/wenpeng/Dataset/SQuAD/"
+    files=['train-TwoStageRanking.txt', 'dev-TwoStageRanking.txt']
+    word2id={}  # store vocabulary, each word map to a id
+    all_sentences_l=[]
+    all_masks_l=[]
+    all_sentences_r=[]
+    all_masks_r=[]
+    all_labels=[]
+    max_sen_len_q=0
+    max_sen_len_s=0
+    for i in range(len(files)):
+        print 'loading file:', root+files[i], '...'
+
+        sents_l=[]
+        sents_masks_l=[]
+        sents_r=[]
+        sents_masks_r=[]
+        labels=[]
+        readfile=open(root+files[i], 'r')
+        for line in readfile:
+            parts=line.strip().lower().split('\t') #lowercase all tokens, as we guess this is not important for sentiment task
+            if len(parts)>=3:
+
+                label=int(parts[2])  # keep label be 0 or 1
+                sentence_wordlist_l=parts[0].strip().split()
+                sentence_wordlist_r=parts[1].strip().split()
+                l_len=len(sentence_wordlist_l)
+                r_len = len(sentence_wordlist_r)
+                if l_len > max_sen_len_q:
+                    max_sen_len_q=l_len
+                if r_len > max_sen_len_s:
+                    max_sen_len_s=r_len
+                labels.append(label)
+                sent_idlist_l, sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_l, word2id, maxlen_q)
+                sent_idlist_r, sent_masklist_r=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_r, word2id, maxlen_s)
+                sents_l.append(sent_idlist_l)
+                sents_masks_l.append(sent_masklist_l)
+                sents_r.append(sent_idlist_r)
+                sents_masks_r.append(sent_masklist_r)
+        all_sentences_l.append(sents_l)
+        all_sentences_r.append(sents_r)
+        all_masks_l.append(sents_masks_l)
+        all_masks_r.append(sents_masks_r)
+        all_labels.append(labels)
+        labels_array = numpy.asarray(labels)
+        print '\t\t\t size:', len(labels), 'pairs, posi rato: ', numpy.sum(labels_array)*1.0/len(labels)
+    print 'dataset loaded over, totally ', len(word2id), 'words, max sen len:',   max_sen_len_q, max_sen_len_s
+    return all_sentences_l, all_masks_l, all_sentences_r, all_masks_r,all_labels, word2id
+
+
+# def extra_two_wordlist_for_truncateQuestion(wordlist1, wordlist2, stopwords,stemmer):
+#     wordlist1 = [x for x in wordlist1 if x not in string.punctuation]
+#     wordlist2 = [x for x in wordlist2 if x not in string.punctuation]
+# 
+#     wordlist1_nostop = [x for x in wordlist1 if x not in stopwords]
+#     wordlist2_nostop = [x for x in wordlist2 if x not in stopwords]
+# 
+#     wordlist1_stem = [stemmer.stem(x) for x in wordlist1_nostop]
+#     wordlist2_stem = [stemmer.stem(x) for x in wordlist2_nostop]
+#     
+#     
+#     
+#     
+#     if len(wordlist1_nostop)==0 or len(wordlist2_nostop) ==0:
+#         return [0.0, 0.0,0.0, 0.0,0.0, 0.0,0.0, 0.0]
+#     else:
+#         word_overalp = set(wordlist1_nostop) & set(wordlist2_nostop)
+#         word_overalp_stem = set(wordlist1_stem) & set(wordlist2_stem)
+#         feature_1 = len(word_overalp)*1.0/len(set(wordlist1))
+#         feature_2 = len(word_overalp)*1.0/len(set(wordlist2))
+#         feature_3 = len(word_overalp_stem)*1.0/len(set(wordlist1))
+#         feature_4 = len(word_overalp_stem)*1.0/len(set(wordlist2))
+# 
+#         feature_5 = len(word_overalp)*1.0/len(set(wordlist1_nostop))
+#         feature_6 = len(word_overalp)*1.0/len(set(wordlist2_nostop))
+#         feature_7 = len(word_overalp_stem)*1.0/len(set(wordlist1_nostop))
+#         feature_8 = len(word_overalp_stem)*1.0/len(set(wordlist2_nostop))
+#         return [feature_1,feature_2,feature_3,feature_4,feature_5,feature_6,feature_7,feature_8]#, 1.0/(len(wordlist1)+1.0),1.0/(len(wordlist2)+1.0)]
+
+
+
+def contains_digits(d):
+    return bool(_digits.search(d))
+
+def extra_two_wordlist_lowercase(wordlist1, wordlist2, stopwords,stemmer):
+    wordlist1 = [x for x in wordlist1 if x not in string.punctuation]
+    wordlist2 = [x for x in wordlist2 if x not in string.punctuation]
+
+    wordlist1_nostop = [x for x in wordlist1 if x not in stopwords]
+    wordlist2_nostop = [x for x in wordlist2 if x not in stopwords]
+
+    wordlist1_stem = [stemmer.stem(x) for x in wordlist1_nostop]
+    wordlist2_stem = [stemmer.stem(x) for x in wordlist2_nostop]
+    
+#     extra_vec = extra_two_wordlist_for_truncateQuestion(wordlist1[:2]+wordlist1[-3:-1], wordlist2, stopwords,stemmer)
+    epslon=0.2
+    months=set(['january','february','march','april','may','june','july','august','september','october','november','december'])
+    digit_features=[0.0, 0.0, 0.0] #two features: year, month, value
+    for word in wordlist2:
+        if word.isdigit():
+            if len(word)==4:
+                digit_features[0]=epslon  #year
+            else:
+                digit_features[2]=epslon
+        elif contains_digits(word):
+            digit_features[2]=epslon
+    if len(set(wordlist2) & months)>0:
+        digit_features[1]=epslon
+    
+    
+    
+    
+    qtypes=['what', 'when', 'which', 'how many', 'how much', 'who', 'year']    # size 7
+    qtype_vec=[0.0]*len(qtypes) #what, when, which, how many, how much, who, year
+    q_sent=' '.join(wordlist1)
+    q_word_set=set(wordlist1)
+    for i, type_word in enumerate(qtypes):
+        if type_word in q_word_set or q_sent.find(type_word)>=0:
+            qtype_vec[i]=epslon
+        
+
+
+    if len(wordlist1_nostop)==0 or len(wordlist2_nostop) ==0:
+        return [0.0, 0.0,0.0, 0.0,0.0, 0.0,0.0, 0.0]+digit_features+qtype_vec
+    else:
+        word_overalp = set(wordlist1_nostop) & set(wordlist2_nostop)
+        word_overalp_stem = set(wordlist1_stem) & set(wordlist2_stem)
+        feature_1 = len(word_overalp)*1.0/len(set(wordlist1))
+        feature_2 = len(word_overalp)*1.0/len(set(wordlist2))
+        feature_3 = len(word_overalp_stem)*1.0/len(set(wordlist1))
+        feature_4 = len(word_overalp_stem)*1.0/len(set(wordlist2))
+
+        feature_5 = len(word_overalp)*1.0/len(set(wordlist1_nostop))
+        feature_6 = len(word_overalp)*1.0/len(set(wordlist2_nostop))
+        feature_7 = len(word_overalp_stem)*1.0/len(set(wordlist1_nostop))
+        feature_8 = len(word_overalp_stem)*1.0/len(set(wordlist2_nostop))
+        return [feature_1,feature_2,feature_3,feature_4,feature_5,feature_6,feature_7,feature_8]+digit_features+qtype_vec#, 1.0/(len(wordlist1)+1.0),1.0/(len(wordlist2)+1.0)]
+
+
+def extra_two_wordlist(wordlist1, wordlist2, stopwords,stemmer):
+    wordlist1_lower = [x.lower() for x in wordlist1]
+    wordlist2_lower = [x.lower() for x in wordlist2]
+    
+    wordlist1 = [x for x in wordlist1 if x not in string.punctuation]
+    wordlist2 = [x for x in wordlist2 if x not in string.punctuation]
+
+    wordlist1_nostop = [x for x in wordlist1 if x not in stopwords]
+    wordlist2_nostop = [x for x in wordlist2 if x not in stopwords]
+
+    wordlist1_stem = [stemmer.stem(x) for x in wordlist1_nostop]
+    wordlist2_stem = [stemmer.stem(x) for x in wordlist2_nostop]
+    
+    
+    lower_vec = extra_two_wordlist_lowercase(wordlist1_lower, wordlist2_lower,stopwords,stemmer)
+#     extra_vec = extra_two_wordlist_for_truncateQuestion(wordlist1[:2]+wordlist1[-3:-1], wordlist2, stopwords,stemmer)
+    epslon=0.2
+    months=set(['january','february','march','april','may','june','july','august','september','october','november','december'])
+    digit_features=[0.0, 0.0, 0.0] #two features: year, month, value
+    for word in wordlist2:
+        if word.isdigit():
+            if len(word)==4:
+                digit_features[0]=epslon  #year
+            else:
+                digit_features[2]=epslon
+        elif contains_digits(word):
+            digit_features[2]=epslon
+    if len(set(wordlist2) & months)>0:
+        digit_features[1]=epslon
+    
+    
+    
+    
+    qtypes=['what', 'when', 'which', 'how many', 'how much', 'who', 'year']    # size 7
+    qtype_vec=[0.0]*len(qtypes) #what, when, which, how many, how much, who, year
+    q_sent=' '.join(wordlist1)
+    q_word_set=set(wordlist1)
+    for i, type_word in enumerate(qtypes):
+        if type_word in q_word_set or q_sent.find(type_word)>=0:
+            qtype_vec[i]=epslon
+        
+
+
+    if len(wordlist1_nostop)==0 or len(wordlist2_nostop) ==0:
+        return [0.0, 0.0,0.0, 0.0,0.0, 0.0,0.0, 0.0]+digit_features+qtype_vec+lower_vec
+    else:
+        word_overalp = set(wordlist1_nostop) & set(wordlist2_nostop)
+        word_overalp_stem = set(wordlist1_stem) & set(wordlist2_stem)
+        feature_1 = len(word_overalp)*1.0/len(set(wordlist1))
+        feature_2 = len(word_overalp)*1.0/len(set(wordlist2))
+        feature_3 = len(word_overalp_stem)*1.0/len(set(wordlist1))
+        feature_4 = len(word_overalp_stem)*1.0/len(set(wordlist2))
+
+        feature_5 = len(word_overalp)*1.0/len(set(wordlist1_nostop))
+        feature_6 = len(word_overalp)*1.0/len(set(wordlist2_nostop))
+        feature_7 = len(word_overalp_stem)*1.0/len(set(wordlist1_nostop))
+        feature_8 = len(word_overalp_stem)*1.0/len(set(wordlist2_nostop))
+        return [feature_1,feature_2,feature_3,feature_4,feature_5,feature_6,feature_7,feature_8]+digit_features+qtype_vec+lower_vec#, 1.0/(len(wordlist1)+1.0),1.0/(len(wordlist2)+1.0)]
+
+
+def load_squad_TwoStageRanking_dataset(maxlen_q=15, maxlen_s=40):
+#     from nltk.stem import SnowballStemmer
+    stopwords = []
+    stopfile=open('stopwords.txt', 'r')
+    for line in stopfile:
+        stopwords.append(line.strip())
+    stopfile.close()
+    stopwords=set(stopwords)
+
+    stemmer = SnowballStemmer('english')
+    root="/mounts/data/proj/wenpeng/Dataset/SQuAD/"
+    files=['train-TwoStageRanking.txt', 'dev-TwoStageRanking.txt']
+    word2id={}  # store vocabulary, each word map to a id
+    all_sentences_l=[]
+    all_masks_l=[]
+    all_sentences_r=[]
+    all_masks_r=[]
+    all_labels=[]
+    all_extra = []
+    max_sen_len_q=0
+    max_sen_len_s=0
+    for i in range(len(files)):
+        print 'loading file:', root+files[i], '...'
+
+        sents_l=[]
+        sents_masks_l=[]
+        sents_r=[]
+        sents_masks_r=[]
+        extra=[]
+        labels=[]
+        readfile=codecs.open(root+files[i], 'r', "utf-8")
+        for line in readfile:
+            parts=line.strip().split('\t') #lowercase all tokens, as we guess this is not important for sentiment task
+            if len(parts)>=3:
+
+                label=int(parts[2])  # keep label be 0 or 1
+                # sentence_wordlist_l=[i for i in parts[0].strip().split() if i not in string.punctuation]
+                # sentence_wordlist_r=[i for i in parts[1].strip().split() if i not in string.punctuation]
+
+                sentence_wordlist_l=parts[0].strip().split()
+                sentence_wordlist_r=parts[1].strip().split()
+                extra.append(extra_two_wordlist(sentence_wordlist_l, sentence_wordlist_r,stopwords, stemmer))
+                l_len=len(sentence_wordlist_l)
+                r_len = len(sentence_wordlist_r)
+                if l_len > max_sen_len_q:
+                    max_sen_len_q=l_len
+                if r_len > max_sen_len_s:
+                    max_sen_len_s=r_len
+                labels.append(label)
+                sent_idlist_l, sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_l, word2id, maxlen_q)
+                sent_idlist_r, sent_masklist_r=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_r, word2id, maxlen_s)
+                sents_l.append(sent_idlist_l)
+                sents_masks_l.append(sent_masklist_l)
+                sents_r.append(sent_idlist_r)
+                sents_masks_r.append(sent_masklist_r)
+        all_sentences_l.append(sents_l)
+        all_sentences_r.append(sents_r)
+        all_masks_l.append(sents_masks_l)
+        all_masks_r.append(sents_masks_r)
+        all_labels.append(labels)
+        all_extra.append(extra)
+        labels_array = numpy.asarray(labels)
+        print '\t\t\t size:', len(labels), 'pairs, posi rato: ', numpy.sum(labels_array)*1.0/len(labels)
+        readfile.close()
+    print 'dataset loaded over, totally ', len(word2id), 'words, max sen len:',   max_sen_len_q, max_sen_len_s
+    return all_sentences_l, all_masks_l, all_sentences_r, all_masks_r,all_labels, all_extra, word2id
+
+
+def load_duyu_dataset(strr='marco', maxlen_q=15, maxlen_s=40):
+    #used for ranking loss
+    root="/mounts/Users/student/wenpeng/Duyu/to-wenpeng-"+strr+"/"
+    files=['train.txt', 'dev.txt', 'test.txt']
+    word2id={}  # store vocabulary, each word map to a id
+    all_sentences_l=[]
+    all_masks_l=[]
+    all_sentences_r=[]
+    all_masks_r=[]
+    all_labels=[]
+    max_sen_len_q=0
+    max_sen_len_s=0
+    for i in range(len(files)):
+        print 'loading file:', root+files[i], '...'
+
+        sents_l=[]
+        sents_masks_l=[]
+        sents_r=[]
+        sents_masks_r=[]
+        labels=[]
+        readfile=open(root+files[i], 'r')
+        for line in readfile:
+            parts=line.strip().lower().split('\t') #lowercase all tokens, as we guess this is not important for sentiment task
+            if len(parts)==3:
+
+                label=int(parts[2])  # keep label be 0 or 1
+                sentence_wordlist_l=parts[0].strip().lower().split()
+                sentence_wordlist_r=parts[1].strip().lower().split()
+                l_len=len(sentence_wordlist_l)
+                r_len = len(sentence_wordlist_r)
+                if l_len > max_sen_len_q:
+                    max_sen_len_q=l_len
+                if r_len > max_sen_len_s:
+                    max_sen_len_s=r_len
+                labels.append(label)
+                sent_idlist_l, sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_l, word2id, maxlen_q)
+                sent_idlist_r, sent_masklist_r=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_r, word2id, maxlen_s)
+                sents_l.append(sent_idlist_l)
+                sents_masks_l.append(sent_masklist_l)
+                sents_r.append(sent_idlist_r)
+                sents_masks_r.append(sent_masklist_r)
+        all_sentences_l.append(sents_l)
+        all_sentences_r.append(sents_r)
+        all_masks_l.append(sents_masks_l)
+        all_masks_r.append(sents_masks_r)
+        all_labels.append(labels)
+        labels_array = numpy.asarray(labels)
+        print '\t\t\t size:', len(labels), 'pairs, posi rato: ', numpy.sum(labels_array)*1.0/len(labels)
+    print 'dataset loaded over, totally ', len(word2id), 'words, max sen len:',   max_sen_len_q, max_sen_len_s
+    return all_sentences_l, all_masks_l, all_sentences_r, all_masks_r,all_labels, word2id

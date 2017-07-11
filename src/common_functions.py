@@ -1348,6 +1348,12 @@ def compute_simi_feature_matrix_with_column(input_l_matrix, column, length_l, le
     
     return simi_matrix#[:length_l, :length_r]
 
+def cosine_row_wise_twoMatrix(M1, M2):
+    #assume both (batch, hidden))
+    dot=T.sum(M1*M2, axis=1) #(batch)
+    norm1=T.sqrt(T.sum(M1**2, axis=1))
+    norm2=T.sqrt(T.sum(M2**2, axis=1))
+    return dot/(norm1*norm2)
 
 def compute_acc(label_list, scores_list):
     #label_list contains 0/1, 500 as a minibatch, score_list contains score between -1 and 1, 500 as a minibatch
