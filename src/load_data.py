@@ -66,7 +66,21 @@ def load_word2vec():
 
     print "==> loading 300d word2vec"
 #     with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "data/glove/glove.6B." + str(dim) + "d.txt")) as f:
-    f=open('/mounts/data/proj/wenpeng/Dataset/glove.6B.300d.txt', 'r')#word2vec_words_300d.txt, glove.6B.50d.txt
+    f=open('/mounts/data/proj/wenpeng/Dataset/word2vec_words_300d.txt', 'r')#glove.6B.300d.txt, word2vec_words_300d.txt, glove.6B.50d.txt
+    for line in f:
+        l = line.split()
+        word2vec[l[0]] = map(float, l[1:])
+
+    print "==> word2vec is loaded"
+
+    return word2vec
+def load_word2vec_file(filename):
+    emb_dic = '/mounts/data/proj/wenpeng/Dataset/'
+    word2vec = {}
+
+    print "==> loading 300d word2vec"
+#     with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "data/glove/glove.6B." + str(dim) + "d.txt")) as f:
+    f=open(emb_dic+filename, 'r')#glove.6B.300d.txt, word2vec_words_300d.txt, glove.6B.50d.txt
     for line in f:
         l = line.split()
         word2vec[l[0]] = map(float, l[1:])
@@ -75,7 +89,6 @@ def load_word2vec():
 
     return word2vec
 def load_word2vec_to_init(rand_values, ivocab, word2vec):
-
     for id, word in ivocab.iteritems():
         emb=word2vec.get(word)
         if emb is not None:
@@ -487,11 +500,12 @@ def compute_map_mrr(filename, probs):
     line_no=0
     for line in testread:
         parts=line.strip().split('\t')
-        if parts[0]!=pre_q:
-            separate.append(line_no)
-        labels.append(int(parts[2]))
-        pre_q=parts[0]
-        line_no+=1
+        if len(parts)>=3:
+            if parts[0]!=pre_q:
+                separate.append(line_no)
+            labels.append(int(parts[2]))
+            pre_q=parts[0]
+            line_no+=1
     testread.close()
     separate.append(line_no)#the end of file
     #compute MAP, MRR
@@ -536,6 +550,96 @@ def compute_map_mrr(filename, probs):
 
 
     return MAP, MRR, ACC
+
+def retrieve_top1_sent(filename, probs, topN):
+    #file
+    testread=open(filename, 'r')
+    separate=[]
+    labels=[]
+    sents=[]
+    questions=[]
+    answers=[]
+    q_ids=[]
+    pre_q=' '
+    line_no=0
+    for line in testread:
+        parts=line.strip().split('\t')
+        if len(parts)>=3:
+            if parts[0]!=pre_q:
+                separate.append(line_no)
+            questions.append(parts[0])
+            sents.append(parts[1])
+            labels.append(int(parts[2]))
+            if len(parts)==4:
+                answers.append(parts[3])
+            else:
+                answers.append(' ')
+            pre_q=parts[0]
+            line_no+=1
+        else:
+            q_ids.append(parts[0])
+            
+            
+    testread.close()
+    writefile = open('/mounts/data/proj/wenpeng/Dataset/SQuAD/dev-TwoStageRanking-SpanLevel-20170802.txt', 'w')
+    separate.append(line_no)#the end of file
+    #compute MAP, MRR
+    question_no=len(separate)-1
+    if question_no!=len(q_ids):
+        print 'question_no!=len(q_ids):', question_no, len(q_ids)
+        exit(0)
+    all_acc=0.0
+    for i in range(question_no):
+        q_id = q_ids[i]
+        sub_labels=labels[separate[i]:separate[i+1]]
+        sub_probs=probs[separate[i]:separate[i+1]]
+        sub_questions = questions[separate[i]:separate[i+1]]
+        sub_sents = sents[separate[i]:separate[i+1]]
+        sents_ids = range(separate[i+1] - separate[i])
+        sub_ans = [x for x in answers[separate[i]:separate[i+1]] if x !=' ']
+        sub_dict = [(prob, label, sent, sent_id) for prob, label, sent, sent_id in izip(sub_probs, sub_labels, sub_sents, sents_ids)] # a list of tuple
+        sorted_tuples=sorted(sub_dict,key=lambda tup: tup[0], reverse = True)
+
+        #MAP
+        top1_sent=''
+        top1_label=0
+        top1_sent_id=0
+        in_top2_flag=False
+        for index, (prob,label, sent, sent_id) in enumerate(sorted_tuples):
+            if index==0:
+                if label ==1:
+#                     all_acc+=1
+#                     top1_label = label
+                    in_top2_flag = True
+                top1_sent += ' '+sent
+                top1_sent_id = sent_id
+            elif index ==1:
+                if sent_id+1 == top1_sent_id:
+                    top1_sent= sent+' '+top1_sent
+                    if label ==1:
+                        in_top2_flag=True
+                elif top1_sent_id+1 == sent_id:
+                    top1_sent +=' '+sent
+                    if label ==1:
+                        in_top2_flag=True
+                else:
+                    break
+                
+                
+            else:
+                break
+        if len(set(sub_questions))!=1:
+            print 'len(set(sub_questions))!=1:'
+            print sub_questions
+            exit(0)
+        if in_top2_flag:
+            all_acc+=1
+            top1_label = 1
+        writefile.write(q_id+'\t'+sub_questions[0]+'\t'+top1_sent.strip()+'\t'+str(top1_label)+'\t'+' || '.join(sub_ans)+'\n')
+
+    ACC=all_acc/question_no
+    print '\t\t\t\tretrieve top 1 dev sent over, p@1 indeed: ', ACC
+    writefile.close()
 
 def load_POS_dataset(maxlen=40):
 
@@ -645,16 +749,16 @@ def load_duyu_marco_dataset(maxlen_q=15, maxlen_s=40):
 # def extra_two_wordlist_for_truncateQuestion(wordlist1, wordlist2, stopwords,stemmer):
 #     wordlist1 = [x for x in wordlist1 if x not in string.punctuation]
 #     wordlist2 = [x for x in wordlist2 if x not in string.punctuation]
-# 
+#
 #     wordlist1_nostop = [x for x in wordlist1 if x not in stopwords]
 #     wordlist2_nostop = [x for x in wordlist2 if x not in stopwords]
-# 
+#
 #     wordlist1_stem = [stemmer.stem(x) for x in wordlist1_nostop]
 #     wordlist2_stem = [stemmer.stem(x) for x in wordlist2_nostop]
-#     
-#     
-#     
-#     
+#
+#
+#
+#
 #     if len(wordlist1_nostop)==0 or len(wordlist2_nostop) ==0:
 #         return [0.0, 0.0,0.0, 0.0,0.0, 0.0,0.0, 0.0]
 #     else:
@@ -664,7 +768,7 @@ def load_duyu_marco_dataset(maxlen_q=15, maxlen_s=40):
 #         feature_2 = len(word_overalp)*1.0/len(set(wordlist2))
 #         feature_3 = len(word_overalp_stem)*1.0/len(set(wordlist1))
 #         feature_4 = len(word_overalp_stem)*1.0/len(set(wordlist2))
-# 
+#
 #         feature_5 = len(word_overalp)*1.0/len(set(wordlist1_nostop))
 #         feature_6 = len(word_overalp)*1.0/len(set(wordlist2_nostop))
 #         feature_7 = len(word_overalp_stem)*1.0/len(set(wordlist1_nostop))
@@ -685,9 +789,9 @@ def extra_two_wordlist_lowercase(wordlist1, wordlist2, stopwords,stemmer):
 
     wordlist1_stem = [stemmer.stem(x) for x in wordlist1_nostop]
     wordlist2_stem = [stemmer.stem(x) for x in wordlist2_nostop]
-    
+
 #     extra_vec = extra_two_wordlist_for_truncateQuestion(wordlist1[:2]+wordlist1[-3:-1], wordlist2, stopwords,stemmer)
-    epslon=0.2
+    epslon=1.0
     months=set(['january','february','march','april','may','june','july','august','september','october','november','december'])
     digit_features=[0.0, 0.0, 0.0] #two features: year, month, value
     for word in wordlist2:
@@ -700,18 +804,18 @@ def extra_two_wordlist_lowercase(wordlist1, wordlist2, stopwords,stemmer):
             digit_features[2]=epslon
     if len(set(wordlist2) & months)>0:
         digit_features[1]=epslon
-    
-    
-    
-    
-    qtypes=['what', 'when', 'which', 'how many', 'how much', 'who', 'year']    # size 7
+
+
+
+
+    qtypes=['what', 'when', 'where','which','how long', 'how many', 'how much', 'who', 'whose', 'why','how','year']    # size 12
     qtype_vec=[0.0]*len(qtypes) #what, when, which, how many, how much, who, year
     q_sent=' '.join(wordlist1)
     q_word_set=set(wordlist1)
     for i, type_word in enumerate(qtypes):
         if type_word in q_word_set or q_sent.find(type_word)>=0:
             qtype_vec[i]=epslon
-        
+
 
 
     if len(wordlist1_nostop)==0 or len(wordlist2_nostop) ==0:
@@ -734,7 +838,7 @@ def extra_two_wordlist_lowercase(wordlist1, wordlist2, stopwords,stemmer):
 def extra_two_wordlist(wordlist1, wordlist2, stopwords,stemmer):
     wordlist1_lower = [x.lower() for x in wordlist1]
     wordlist2_lower = [x.lower() for x in wordlist2]
-    
+
     wordlist1 = [x for x in wordlist1 if x not in string.punctuation]
     wordlist2 = [x for x in wordlist2 if x not in string.punctuation]
 
@@ -743,13 +847,13 @@ def extra_two_wordlist(wordlist1, wordlist2, stopwords,stemmer):
 
     wordlist1_stem = [stemmer.stem(x) for x in wordlist1_nostop]
     wordlist2_stem = [stemmer.stem(x) for x in wordlist2_nostop]
-    
-    
+
+
     lower_vec = extra_two_wordlist_lowercase(wordlist1_lower, wordlist2_lower,stopwords,stemmer)
 #     extra_vec = extra_two_wordlist_for_truncateQuestion(wordlist1[:2]+wordlist1[-3:-1], wordlist2, stopwords,stemmer)
-    epslon=0.2
-    months=set(['january','february','march','april','may','june','july','august','september','october','november','december'])
-    digit_features=[0.0, 0.0, 0.0] #two features: year, month, value
+    epslon=1.0
+    months=set(['January','February','March','April','May','June','July','August','September','October','November','December'])  #12
+    digit_features=[0.0, 0.0, 0.0] #two features: year, month, digit
     for word in wordlist2:
         if word.isdigit():
             if len(word)==4:
@@ -760,18 +864,18 @@ def extra_two_wordlist(wordlist1, wordlist2, stopwords,stemmer):
             digit_features[2]=epslon
     if len(set(wordlist2) & months)>0:
         digit_features[1]=epslon
-    
-    
-    
-    
-    qtypes=['what', 'when', 'which', 'how many', 'how much', 'who', 'year']    # size 7
+
+
+
+
+    qtypes=['What', 'When', 'Where','Which','How long', 'How many', 'How much', 'Who', 'Whose', 'Why','How','year']    # size 12
     qtype_vec=[0.0]*len(qtypes) #what, when, which, how many, how much, who, year
     q_sent=' '.join(wordlist1)
     q_word_set=set(wordlist1)
     for i, type_word in enumerate(qtypes):
         if type_word in q_word_set or q_sent.find(type_word)>=0:
             qtype_vec[i]=epslon
-        
+
 
 
     if len(wordlist1_nostop)==0 or len(wordlist2_nostop) ==0:
@@ -822,6 +926,7 @@ def load_squad_TwoStageRanking_dataset(maxlen_q=15, maxlen_s=40):
         extra=[]
         labels=[]
         readfile=codecs.open(root+files[i], 'r', "utf-8")
+        co_line=0
         for line in readfile:
             parts=line.strip().split('\t') #lowercase all tokens, as we guess this is not important for sentiment task
             if len(parts)>=3:
@@ -830,7 +935,7 @@ def load_squad_TwoStageRanking_dataset(maxlen_q=15, maxlen_s=40):
                 # sentence_wordlist_l=[i for i in parts[0].strip().split() if i not in string.punctuation]
                 # sentence_wordlist_r=[i for i in parts[1].strip().split() if i not in string.punctuation]
 
-                sentence_wordlist_l=parts[0].strip().split()
+                sentence_wordlist_l=parts[0].strip().split()#questions
                 sentence_wordlist_r=parts[1].strip().split()
                 extra.append(extra_two_wordlist(sentence_wordlist_l, sentence_wordlist_r,stopwords, stemmer))
                 l_len=len(sentence_wordlist_l)
@@ -846,6 +951,9 @@ def load_squad_TwoStageRanking_dataset(maxlen_q=15, maxlen_s=40):
                 sents_masks_l.append(sent_masklist_l)
                 sents_r.append(sent_idlist_r)
                 sents_masks_r.append(sent_masklist_r)
+            co_line+=1
+#             if co_line%1000==0:
+#                 print co_line, '...'
         all_sentences_l.append(sents_l)
         all_sentences_r.append(sents_r)
         all_masks_l.append(sents_masks_l)
@@ -858,7 +966,102 @@ def load_squad_TwoStageRanking_dataset(maxlen_q=15, maxlen_s=40):
     print 'dataset loaded over, totally ', len(word2id), 'words, max sen len:',   max_sen_len_q, max_sen_len_s
     return all_sentences_l, all_masks_l, all_sentences_r, all_masks_r,all_labels, all_extra, word2id
 
+def create_squad_question_classify_wh_word():
+    import random
+    root="/mounts/data/proj/wenpeng/Dataset/SQuAD/"
+    files=['train-TwoStageRanking.txt', 'dev-TwoStageRanking.txt']
+    writefiles=['train-question_classify_wh_word.txt', 'dev-question_classify_wh_word.txt']
+    wh_word_set = set(['What', 'Where', 'When', 'Who', 'Which', 'Whom', 'what', 'where', 'when', 'who', 'which', 'whom'])
+    for i in range(len(files)):
+        print 'loading file:', root+files[i], '...'
+        writefile=codecs.open(root+writefiles[i], 'w', "utf-8")
 
+
+        readfile=codecs.open(root+files[i], 'r', "utf-8")
+        for line in readfile:
+            parts=line.strip().split('\t') #lowercase all tokens, as we guess this is not important for sentiment task
+            if len(parts)>=3:
+                question = parts[0]
+                question_wordlist = question.split()
+                sentence = parts[1]
+                label=int(parts[2])  # keep label be 0 or 1
+                overlap_wh = wh_word_set & set(question.split())
+                if label == 1 and len(overlap_wh)>0:
+                    #write pos
+                    ans = parts[3]
+#                     if question = 'What sits on top of the Main Building at Notre Dame ?':
+#                         print sentence
+                    start = len(sentence[:sentence.find(ans)].split())
+                    end = start + len(ans.split())-1
+                    writefile.write(question+'\t'+sentence+'\t'+str(start)+'\t'+str(end)+'\t'+str(label)+'\t'+ans+'\n')
+                    #write neg
+                    new_question = []
+                    for word in question_wordlist:
+                        if word in wh_word_set:
+                            replace_wh_word = random.sample(wh_word_set-set([word]), 1)[0]
+                            new_question.append(replace_wh_word)
+                        else:
+                            new_question.append(word)
+                    writefile.write(' '.join(new_question)+'\t'+sentence+'\t'+str(start)+'\t'+str(end)+'\t'+str(0)+'\t'+ans+'\n')
+                
+        
+        readfile.close()
+        writefile.close()
+    print 'over'
+def load_squad_question_classify_wh_word(maxlen=40, maxlen_q=40):
+    root="/mounts/data/proj/wenpeng/Dataset/SQuAD/"
+    files=['train-question_classify_wh_word.txt', 'dev-question_classify_wh_word.txt']
+    word2id={}  # store vocabulary, each word map to a id
+    all_sentences=[]
+    all_masks=[]
+    all_qs=[]
+    all_qs_masks=[]
+    boundaries=[]
+    all_labels=[]
+    max_right_b = 0
+    dev_content = []
+    for i in range(len(files)):
+        print 'loading file:', root+files[i], '...'
+
+        sents=[]
+        sents_masks=[]
+        q=[]
+        q_mask=[]
+        boundary=[]
+        labels=[]
+        readfile=open(root+files[i], 'r')
+        for line in readfile:
+            if i ==1:
+                dev_content.append(line.strip())
+            parts=line.strip().split('\t') #lowercase all tokens, as we guess this is not important for sentiment task
+            question_wordlist = parts[0].split()
+            sentence_wordlist = parts[1].split()
+
+            start = int(parts[2])
+            end = int(parts[3])
+            if end > max_right_b:
+                max_right_b = end
+            label=int(parts[4])  # keep label be 0 or 1
+
+            labels.append(label)
+            sent_idlist, sent_masklist=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist, word2id, maxlen)
+            q_idlist, q_masklist=transfer_wordlist_2_idlist_with_maxlen(question_wordlist, word2id, maxlen_q)
+            
+            sents.append(sent_idlist)
+            sents_masks.append(sent_masklist)
+            q.append(q_idlist)
+            q_mask.append(q_masklist)
+            boundary.append([start, end])
+            
+        all_sentences.append(sents)
+        all_masks.append(sents_masks)
+        all_qs.append(q)
+        all_qs_masks.append(q_mask)
+        boundaries.append(boundary)
+        all_labels.append(labels)
+        print '\t\t\t size:', len(labels), ' max_right_b:', max_right_b
+    print 'dataset loaded over, totally ', len(word2id), 'words'
+    return all_sentences, all_masks, all_qs, all_qs_masks, boundaries, all_labels, word2id,dev_content
 def load_duyu_dataset(strr='marco', maxlen_q=15, maxlen_s=40):
     #used for ranking loss
     root="/mounts/Users/student/wenpeng/Duyu/to-wenpeng-"+strr+"/"
