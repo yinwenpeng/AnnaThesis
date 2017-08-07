@@ -14,11 +14,22 @@ def transfer_wordlist_2_idlist_with_maxlen(token_list, vocab_map, maxlen):
     '''
     idlist=[]
     for word in token_list:
-        id=vocab_map.get(word)
-        if id is None: # if word was not in the vocabulary
-            id=len(vocab_map)+1  # id of true words starts from 1, leaving 0 to "pad id"
-            vocab_map[word]=id
-        idlist.append(id)
+        position = word.find('-')
+        if position<0:
+            id=vocab_map.get(word)
+            if id is None: # if word was not in the vocabulary
+                id=len(vocab_map)+1  # id of true words starts from 1, leaving 0 to "pad id"
+                vocab_map[word]=id
+            idlist.append(id)
+        else:
+            subwords = word.split('-')
+            for subword in subwords:
+                id=vocab_map.get(subword)
+                if id is None: # if word was not in the vocabulary
+                    id=len(vocab_map)+1  # id of true words starts from 1, leaving 0 to "pad id"
+                    vocab_map[subword]=id
+                idlist.append(id)                
+            
     mask_list=[1.0]*len(idlist) # mask is used to indicate each word is a true word or a pad word
     pad_size=maxlen-len(idlist)
     if pad_size>0:
@@ -29,6 +40,38 @@ def transfer_wordlist_2_idlist_with_maxlen(token_list, vocab_map, maxlen):
         mask_list=mask_list[:maxlen]
     return idlist, mask_list
 
+def transfer_wordlist_2_idlist_with_maxlen_return_wordlist(token_list, vocab_map, maxlen):
+    subword_tokenlist=[]
+    for token in token_list:
+        position = token.find('-')
+        if position<0:
+            subword_tokenlist.append(token)
+        else:
+            subwords = token.split('-')
+            for subword in subwords:
+                subword_tokenlist.append(subword)
+    token_list =   subword_tokenlist          
+    pad_size = maxlen - len(token_list)
+    if pad_size > 0:
+        token_list=['uuuuuu']*pad_size+token_list
+    else:
+        token_list = token_list[:maxlen]
+    idlist=[]
+    mask_list=[]
+    if pad_size > 0:
+        idlist+=[0]*pad_size
+        mask_list+=[0.0]*pad_size
+        valid_token_list = token_list[pad_size:]
+    else:
+        valid_token_list = token_list
+    for word in valid_token_list:
+        id=vocab_map.get(word)
+        if id is None: # if word was not in the vocabulary
+            id=len(vocab_map)+1  # id of true words starts from 1, leaving 0 to "pad id"
+            vocab_map[word]=id
+        idlist.append(id)
+        mask_list.append(1.0)
+    return idlist, mask_list, token_list
 
 def load_sentiment_dataset(maxlen=40, minlen=4):
     root="/mounts/data/proj/wenpeng/Dataset/StanfordSentiment/stanfordSentimentTreebank/2classes/"
@@ -66,7 +109,7 @@ def load_word2vec():
 
     print "==> loading 300d word2vec"
 #     with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "data/glove/glove.6B." + str(dim) + "d.txt")) as f:
-    f=open('/mounts/data/proj/wenpeng/Dataset/word2vec_words_300d.txt', 'r')#glove.6B.300d.txt, word2vec_words_300d.txt, glove.6B.50d.txt
+    f=open('/mounts/data/proj/wenpeng/Dataset/word2vec_words_300d.txt', 'r')#glove.6B.300d.txt, word2vec_words_300d.txt, glove.840B.300d.txt
     for line in f:
         l = line.split()
         word2vec[l[0]] = map(float, l[1:])
@@ -89,11 +132,15 @@ def load_word2vec_file(filename):
 
     return word2vec
 def load_word2vec_to_init(rand_values, ivocab, word2vec):
+    fail=0
     for id, word in ivocab.iteritems():
         emb=word2vec.get(word)
         if emb is not None:
             rand_values[id]=numpy.array(emb)
-    print '==> use word2vec initialization over...'
+        else:
+#             print word
+            fail+=1
+    print '==> use word2vec initialization over...fail ', fail
     return rand_values
 
 def load_SNLI_dataset(maxlen=40):
@@ -143,6 +190,195 @@ def load_SNLI_dataset(maxlen=40):
         print '\t\t\t size:', len(labels), 'pairs'
     print 'dataset loaded over, totally ', len(word2id), 'words, max sen len:',   max_sen_len
     return all_sentences_l, all_masks_l, all_sentences_r, all_masks_r,all_labels, word2id
+
+def extra_two_wordlist_SNLI(wordlist1, wordlist2):
+
+
+    word_overalp = set(wordlist1) & set(wordlist2)
+    feature_1 = len(word_overalp)*1.0/len(set(wordlist1))
+    feature_2 = len(word_overalp)*1.0/len(set(wordlist2))
+
+    return [feature_1,feature_2]#, 1.0/(len(wordlist1)+1.0),1.0/(len(wordlist2)+1.0)]
+
+def load_SNLI_dataset_with_Nonoverlap(maxlen=40):
+    root="/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/"
+    files=['train.txt', 'dev.txt', 'test.txt']
+    word2id={}  # store vocabulary, each word map to a id
+    all_sentences_l=[]
+    all_masks_l=[]
+    all_sentences_r=[]
+    all_masks_r=[]
+
+    all_nonoverlap_sentences_l=[]
+    all_nonoverlap_masks_l=[]
+    all_nonoverlap_sentences_r=[]
+    all_nonoverlap_masks_r=[]
+
+    all_labels=[]
+
+    max_sen_len=0
+    for i in range(len(files)):
+        print 'loading file:', root+files[i], '...'
+
+        sents_l=[]
+        sents_masks_l=[]
+        sents_r=[]
+        sents_masks_r=[]
+        nonoverlap_sents_l=[]
+        nonoverlap_sents_masks_l=[]
+        nonoverlap_sents_r=[]
+        nonoverlap_sents_masks_r=[]
+        labels=[]
+
+        readfile=open(root+files[i], 'r')
+        for line in readfile:
+            parts=line.strip().lower().split('\t') #lowercase all tokens, as we guess this is not important for sentiment task
+            if len(parts)==3:
+
+                label=int(parts[0])  # keep label be 0 or 1
+                sentence_wordlist_l=parts[1].strip().split()
+                sentence_wordlist_r=parts[2].strip().split()
+                word_overalp = set(sentence_wordlist_l) & set(sentence_wordlist_r)
+                nonoverlap_sentence_wordlist_l = [x for x in sentence_wordlist_l if x not in word_overalp]
+                nonoverlap_sentence_wordlist_r = [x for x in sentence_wordlist_r if x not in word_overalp]
+                if len(nonoverlap_sentence_wordlist_l)==0 or len(nonoverlap_sentence_wordlist_r)==0:
+                    continue
+
+                l_len=len(sentence_wordlist_l)
+                r_len = len(sentence_wordlist_r)
+                if l_len > max_sen_len:
+                    max_sen_len=l_len
+                if r_len > max_sen_len:
+                    max_sen_len=r_len
+                labels.append(label)
+                sent_idlist_l, sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_l, word2id, maxlen)
+                sent_idlist_r, sent_masklist_r=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_r, word2id, maxlen)
+                nonoverlap_sent_idlist_l, nonoverlap_sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(nonoverlap_sentence_wordlist_l, word2id, maxlen)
+                nonoverlap_sent_idlist_r, nonoverlap_sent_masklist_r=transfer_wordlist_2_idlist_with_maxlen(nonoverlap_sentence_wordlist_r, word2id, maxlen)
+
+                sents_l.append(sent_idlist_l)
+                sents_masks_l.append(sent_masklist_l)
+                sents_r.append(sent_idlist_r)
+                sents_masks_r.append(sent_masklist_r)
+
+                nonoverlap_sents_l.append(nonoverlap_sent_idlist_l)
+                nonoverlap_sents_masks_l.append(nonoverlap_sent_masklist_l)
+                nonoverlap_sents_r.append(nonoverlap_sent_idlist_r)
+                nonoverlap_sents_masks_r.append(nonoverlap_sent_masklist_r)
+
+        all_sentences_l.append(sents_l)
+        all_sentences_r.append(sents_r)
+        all_masks_l.append(sents_masks_l)
+        all_masks_r.append(sents_masks_r)
+        all_nonoverlap_sentences_l.append(nonoverlap_sents_l)
+        all_nonoverlap_masks_l.append(nonoverlap_sents_masks_l)
+        all_nonoverlap_sentences_r.append(nonoverlap_sents_r)
+        all_nonoverlap_masks_r.append(nonoverlap_sents_masks_r)
+        all_labels.append(labels)
+
+        print '\t\t\t size:', len(labels), 'pairs'
+    print 'dataset loaded over, totally ', len(word2id), 'words, max sen len:',   max_sen_len
+    return all_sentences_l, all_masks_l, all_sentences_r, all_masks_r, all_nonoverlap_sentences_l,all_nonoverlap_masks_l,all_nonoverlap_sentences_r  ,all_nonoverlap_masks_r,               all_labels, word2id
+def wordList_to_charIdList(word_list, char_len, char2id):
+#     sent_len = len(word_list)
+#     pad_size = word_size_limit - sent_len
+#     if pad_size > 0:
+#         word_list = ['u'*char_len]*pad_size + word_list
+#     else:
+#         word_list = word_list[:word_size_limit]
+    char_idlist=[]
+    mask=[]
+    for word in word_list:
+        sub_char_idlist=[]
+        word_len = len(word)
+        for char in word:
+            char_id = char2id.get(char)
+            if char_id is None:
+                char_id = len(char2id)+1
+                char2id[char]=char_id
+            sub_char_idlist.append(char_id)
+        char_pad_size = char_len - len(sub_char_idlist)
+        if char_pad_size > 0:
+            sub_char_idlist = [0]*char_pad_size + sub_char_idlist
+            sub_char_mask = [0.0]*char_pad_size + [1.0]*word_len
+        else:
+            sub_char_idlist=sub_char_idlist[:char_len]
+            sub_char_mask = [1.0]*char_len
+        char_idlist+=sub_char_idlist
+        mask+=sub_char_mask
+    return char_idlist, mask
+def load_SNLI_dataset_char(maxlen=40, char_len=15):
+    root="/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/"
+    files=['train.txt', 'dev.txt', 'test.txt']
+    word2id={}  # store vocabulary, each word map to a id
+    char2id={}
+    all_sentences_l=[]
+    all_masks_l=[]
+    all_sentences_r=[]
+    all_masks_r=[]
+    
+    all_char_sentences_l=[]
+    all_char_masks_l=[]
+    all_char_sentences_r=[]
+    all_char_masks_r=[]
+    
+    all_labels=[]
+    max_sen_len=0
+    for i in range(len(files)):
+        print 'loading file:', root+files[i], '...'
+
+        sents_l=[]
+        sents_masks_l=[]
+        sents_r=[]
+        sents_masks_r=[]
+        sents_char_l=[]
+        sents_char_masks_l=[]
+        sents_char_r=[]
+        sents_char_masks_r=[]
+        labels=[]
+        readfile=open(root+files[i], 'r')
+        for line in readfile:
+            parts=line.strip().lower().split('\t') #lowercase all tokens, as we guess this is not important for sentiment task
+            if len(parts)==3:
+
+                label=int(parts[0])  # keep label be 0 or 1
+                sentence_wordlist_l=parts[1].strip().split()
+                sentence_wordlist_r=parts[2].strip().split()
+                l_len=len(sentence_wordlist_l)
+                r_len = len(sentence_wordlist_r)
+                if l_len > max_sen_len:
+                    max_sen_len=l_len
+                if r_len > max_sen_len:
+                    max_sen_len=r_len
+                labels.append(label)
+                sent_idlist_l, sent_masklist_l, trunc_l=transfer_wordlist_2_idlist_with_maxlen_return_wordlist(sentence_wordlist_l, word2id, maxlen)
+                sent_idlist_r, sent_masklist_r, trunc_r=transfer_wordlist_2_idlist_with_maxlen_return_wordlist(sentence_wordlist_r, word2id, maxlen)
+                l_char_idlist, l_char_mask = wordList_to_charIdList(trunc_l, char_len, char2id)
+                r_char_idlist, r_char_mask = wordList_to_charIdList(trunc_r, char_len, char2id)
+                sents_l.append(sent_idlist_l)
+                sents_masks_l.append(sent_masklist_l)
+                sents_r.append(sent_idlist_r)
+                sents_masks_r.append(sent_masklist_r)
+
+                sents_char_l.append(l_char_idlist)
+                sents_char_masks_l.append(l_char_mask)
+                sents_char_r.append(r_char_idlist)
+                sents_char_masks_r.append(r_char_mask)
+        
+        all_sentences_l.append(sents_l)
+        all_sentences_r.append(sents_r)
+        all_masks_l.append(sents_masks_l)
+        all_masks_r.append(sents_masks_r)
+
+        all_char_sentences_l.append(sents_char_l)
+        all_char_masks_l.append(sents_char_masks_l)
+        all_char_sentences_r.append(sents_char_r)
+        all_char_masks_r.append(sents_char_masks_r)
+    
+        all_labels.append(labels)
+        print '\t\t\t size:', len(labels), 'pairs'
+    print 'dataset loaded over, totally ', len(word2id), 'words, max sen len:',   max_sen_len
+    return all_sentences_l, all_masks_l, all_sentences_r, all_masks_r, all_char_sentences_l,all_char_masks_l,all_char_sentences_r,all_char_masks_r,all_labels, word2id,char2id
 
 def load_guu_data_4_CompTransE(maxPathLen=20):
     rootPath='/mounts/data/proj/wenpeng/Dataset/FB_socher/path/'
@@ -578,8 +814,8 @@ def retrieve_top1_sent(filename, probs, topN):
             line_no+=1
         else:
             q_ids.append(parts[0])
-            
-            
+
+
     testread.close()
     writefile = open('/mounts/data/proj/wenpeng/Dataset/SQuAD/dev-TwoStageRanking-SpanLevel-20170802.txt', 'w')
     separate.append(line_no)#the end of file
@@ -624,8 +860,8 @@ def retrieve_top1_sent(filename, probs, topN):
                         in_top2_flag=True
                 else:
                     break
-                
-                
+
+
             else:
                 break
         if len(set(sub_questions))!=1:
@@ -1003,8 +1239,8 @@ def create_squad_question_classify_wh_word():
                         else:
                             new_question.append(word)
                     writefile.write(' '.join(new_question)+'\t'+sentence+'\t'+str(start)+'\t'+str(end)+'\t'+str(0)+'\t'+ans+'\n')
-                
-        
+
+
         readfile.close()
         writefile.close()
     print 'over'
@@ -1046,13 +1282,13 @@ def load_squad_question_classify_wh_word(maxlen=40, maxlen_q=40):
             labels.append(label)
             sent_idlist, sent_masklist=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist, word2id, maxlen)
             q_idlist, q_masklist=transfer_wordlist_2_idlist_with_maxlen(question_wordlist, word2id, maxlen_q)
-            
+
             sents.append(sent_idlist)
             sents_masks.append(sent_masklist)
             q.append(q_idlist)
             q_mask.append(q_masklist)
             boundary.append([start, end])
-            
+
         all_sentences.append(sents)
         all_masks.append(sents_masks)
         all_qs.append(q)

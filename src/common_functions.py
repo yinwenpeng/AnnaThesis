@@ -155,6 +155,17 @@ def create_rnn_para(rng, dim):
         b = theano.shared(value=b_values, borrow=True)
         return W, b
 
+def ABCNN(left_T, right_T):
+    dot_tensor3 = T.batched_dot(left_T.dimshuffle(0,2,1),right_T) #(batch, l_len, r_len)
+
+
+    dot_matrix_for_right = T.nnet.softmax(T.max(dot_tensor3, axis=1)) #(batch, r_len)
+    weighted_sum_r = T.batched_dot(dot_matrix_for_right.dimshuffle(0,'x',1), right_T.dimshuffle(0,2,1)).reshape((right_T.shape[0], right_T.shape[1])) #(batch,hidden, l_len)
+
+    dot_matrix_for_left = T.nnet.softmax(T.max(dot_tensor3, axis=2))
+    weighted_sum_l = T.batched_dot(dot_matrix_for_left.dimshuffle(0,'x',1), left_T.dimshuffle(0,2,1)).reshape((left_T.shape[0], left_T.shape[1])) #(batch,hidden, r_len)
+    return weighted_sum_l,weighted_sum_r
+
 class Conv_for_Pair(object):
     """we define CNN by input tensor3 and output tensor3, like RNN, filter width must by 3,5,7..."""
 
@@ -162,15 +173,33 @@ class Conv_for_Pair(object):
         #construct interaction matrix
         input_tensor3 = input_tensor3*mask_matrix.dimshuffle(0,'x',1)
         input_tensor3_r = input_tensor3_r*mask_matrix_r.dimshuffle(0,'x',1) #(batch, hidden, r_len)
+        dot_mask = T.batched_dot(mask_matrix.dimshuffle(0,1,'x'), mask_matrix_r.dimshuffle(0,'x',1)) #(batch, l_len, r_len)
         dot_tensor3 = T.batched_dot(input_tensor3.dimshuffle(0,2,1),input_tensor3_r) #(batch, l_len, r_len)
+
+        self.cosine_tensor3 = dot_tensor3
+        # self.cosine_tensor3 = dot_tensor3/(1e-8+T.batched_dot(T.sqrt(1e-8+T.sum(input_tensor3**2, axis=1)).dimshuffle(0,1,'x'), T.sqrt(1e-8+T.sum(input_tensor3_r**2, axis=1)).dimshuffle(0,'x', 1)))
+#         self.l_max_cos = T.max(cosine_tensor3, axis=2) #(batch, l_len)
+#         self.r_max_cos = T.max(cosine_tensor3, axis=1) #(batch, r_len)
+#         sort_l= T.argsort(self.l_max_cos, axis=1)
+#         self.l_topK_min_max_cos = self.l_max_cos[T.repeat(T.arange(input_tensor3.shape[0]), 10, axis=0), sort_l[:,:10].flatten()].reshape((input_tensor3.shape[0],10))
+#         sort_r= T.argsort(self.r_max_cos, axis=1)
+#         self.r_topK_min_max_cos = self.r_max_cos[T.repeat(T.arange(input_tensor3.shape[0]), 10, axis=0), sort_r[:,:10].flatten()].reshape((input_tensor3.shape[0],10))
+        '''
+        another interaction matrix
+        '''
+#         Conc_T = T.concatenate([T.extra_ops.repeat(input_tensor3, input_tensor3_r.shape[2], axis=2), T.tile(input_tensor3_r, (1,1,input_tensor3.shape[2]))], axis=1) #(batch, 2hidden, l_len*r_len)
+#         dot_tensor3 = Conc_T.dimshuffle(0,2,1).dot(att_W).reshape((input_tensor3.shape[0], input_tensor3.shape[2], input_tensor3_r.shape[2]))#(batch, l_len, r_len)
+        
+#         dot_mask=T.cast((1.0-dot_mask)*(dot_mask-100000), 'float32')#(batch, l_len, r_len)
+#         dot_tensor3 = dot_tensor3 + dot_mask
 
         dot_matrix_for_right = T.nnet.softmax(dot_tensor3.reshape((dot_tensor3.shape[0]*dot_tensor3.shape[1], dot_tensor3.shape[2])))
         dot_tensor3_for_right = dot_matrix_for_right.reshape((dot_tensor3.shape[0], dot_tensor3.shape[1], dot_tensor3.shape[2]))#(batch, l_len, r_len)
-        weighted_sum_r = T.batched_dot(dot_tensor3_for_right, input_tensor3_r.dimshuffle(0,2,1)).dimshuffle(0,2,1) #(batch,hidden, l_len)
+        weighted_sum_r = T.batched_dot(dot_tensor3_for_right, input_tensor3_r.dimshuffle(0,2,1)).dimshuffle(0,2,1)*mask_matrix.dimshuffle(0,'x',1) #(batch,hidden, l_len)
 
         dot_matrix_for_left = T.nnet.softmax(dot_tensor3.dimshuffle(0,2,1).reshape((dot_tensor3.shape[0]*dot_tensor3.shape[2], dot_tensor3.shape[1])))
         dot_tensor3_for_left = dot_matrix_for_left.reshape((dot_tensor3.shape[0], dot_tensor3.shape[2], dot_tensor3.shape[1]))#(batch, r_len, l_len)
-        weighted_sum_l = T.batched_dot(dot_tensor3_for_left, input_tensor3.dimshuffle(0,2,1)).dimshuffle(0,2,1) #(batch,hidden, r_len)
+        weighted_sum_l = T.batched_dot(dot_tensor3_for_left, input_tensor3.dimshuffle(0,2,1)).dimshuffle(0,2,1)*mask_matrix_r.dimshuffle(0,'x',1) #(batch,hidden, r_len)
 
         #convolve left, weighted sum r
         conv_model_l = Conv_with_Mask(rng, input_tensor3=input_tensor3,
@@ -188,7 +217,7 @@ class Conv_for_Pair(object):
         '''
         combine
         '''
-        self.conv_attend_out_l = T.tanh(temp_conv_output_l+ temp_conv_output_weighted_r+ b.dimshuffle('x', 0, 'x'))
+        self.conv_attend_out_l = T.tanh(temp_conv_output_l+ temp_conv_output_weighted_r+ b.dimshuffle('x', 0, 'x'))*mask_matrix.dimshuffle(0,'x',1)
 
         mask_for_conv_output_l=T.repeat(mask_matrix.dimshuffle(0,'x',1), filter_shape[0], axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
         mask_for_conv_output_l=(1.0-mask_for_conv_output_l)*(mask_for_conv_output_l-10)
@@ -211,7 +240,7 @@ class Conv_for_Pair(object):
         '''
         combine
         '''
-        self.conv_attend_out_r = T.tanh(temp_conv_output_r+ temp_conv_output_weighted_l+ b.dimshuffle('x', 0, 'x'))
+        self.conv_attend_out_r = T.tanh(temp_conv_output_r+ temp_conv_output_weighted_l+ b.dimshuffle('x', 0, 'x'))*mask_matrix_r.dimshuffle(0,'x',1)
 
         mask_for_conv_output_r=T.repeat(mask_matrix_r.dimshuffle(0,'x',1), filter_shape[0], axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
         mask_for_conv_output_r=(1.0-mask_for_conv_output_r)*(mask_for_conv_output_r-10)
@@ -1660,3 +1689,21 @@ def shuffle_big_list(lis):
         newlis+=[x+i*group_size for x in sub]
     newlis+=lis[-remain:]
     return  newlis
+
+def Gradient_Cost_Para(cost,params,learning_rate):
+#     params = [embeddings]+NN_para+LR_para+HL_layer_1.params+HL_layer_2.params   # put all model parameters together
+#     cost=loss#+L2_weight*L2_reg
+
+    grads = T.grad(cost, params)    # create a list of gradients for all model parameters
+    accumulator=[]
+    for para_i in params:
+        eps_p=np.zeros_like(para_i.get_value(borrow=True),dtype=theano.config.floatX)
+        accumulator.append(theano.shared(eps_p, borrow=True))
+    updates = []
+    for param_i, grad_i, acc_i in zip(params, grads, accumulator):
+        acc = acc_i + T.sqr(grad_i)
+        updates.append((param_i, param_i - learning_rate * grad_i / (T.sqrt(acc)+1e-8)))   #1e-8 is add to get rid of zero division
+        updates.append((acc_i, acc))
+    
+    return updates
+    

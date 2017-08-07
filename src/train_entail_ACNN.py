@@ -16,18 +16,18 @@ from theano.tensor.signal import downsample
 from random import shuffle
 
 from load_data import load_SNLI_dataset, load_word2vec, load_word2vec_to_init
-from common_functions import Conv_for_Pair, create_conv_para, L2norm_paraList, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, cosine_matrix1_matrix2_rowwise, Diversify_Reg, create_GRU_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
+from common_functions import Conv_for_Pair, create_conv_para, L2norm_paraList, ABCNN, create_ensemble_para, cosine_matrix1_matrix2_rowwise, Diversify_Reg, Gradient_Cost_Para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
 
 
-def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.0000001, emb_size=300, batch_size=50, filter_size=[3,1], maxSentLen=50, hidden_size=[300,300], comment='two copies of ACNN'):
-    
+def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0.0000001, div_weight=0.00001, emb_size=300, batch_size=50, filter_size=[3,1], maxSentLen=50, hidden_size=[300,300], margin =0.2, comment=''):
+
     model_options = locals().copy()
     print "model options", model_options
 
     rng = np.random.RandomState(1234)    #random seed, control the model generates the same results
 
 
-    all_sentences_l, all_masks_l, all_sentences_r, all_masks_r,all_labels, word2id  =load_SNLI_dataset(maxlen=maxSentLen)  #minlen, include one label, at least one word in the sentence
+    all_sentences_l, all_masks_l, all_sentences_r, all_masks_r, all_labels, word2id  =load_SNLI_dataset(maxlen=maxSentLen)  #minlen, include one label, at least one word in the sentence
     train_sents_l=np.asarray(all_sentences_l[0], dtype='int32')
     dev_sents_l=np.asarray(all_sentences_l[1], dtype='int32')
     test_sents_l=np.asarray(all_sentences_l[2], dtype='int32')
@@ -43,6 +43,8 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.0000001, emb_siz
     train_masks_r=np.asarray(all_masks_r[0], dtype=theano.config.floatX)
     dev_masks_r=np.asarray(all_masks_r[1], dtype=theano.config.floatX)
     test_masks_r=np.asarray(all_masks_r[2], dtype=theano.config.floatX)
+    
+
 
     train_labels_store=np.asarray(all_labels[0], dtype='int32')
     dev_labels_store=np.asarray(all_labels[1], dtype='int32')
@@ -53,6 +55,7 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.0000001, emb_siz
     test_size=len(test_labels_store)
 
     vocab_size=len(word2id)+1
+
 
     rand_values=rng.normal(0.0, 0.01, (vocab_size, emb_size))   #generate a matrix by Gaussian distribution
     #here, we leave code for loading word2vec to initialize words
@@ -68,6 +71,7 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.0000001, emb_siz
     sents_mask_l=T.fmatrix()
     sents_ids_r=T.imatrix()
     sents_mask_r=T.fmatrix()
+
     labels=T.ivector()
     ######################
     # BUILD ACTUAL MODEL #
@@ -81,7 +85,8 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.0000001, emb_siz
     conv_W, conv_b=create_conv_para(rng, filter_shape=(hidden_size[0], 1, emb_size, filter_size[0]))
     conv_W_context, conv_b_context=create_conv_para(rng, filter_shape=(hidden_size[0], 1, emb_size, 1))
 #     conv_W_2, conv_b_2=create_conv_para(rng, filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[1]))
-#     conv_W_2_context, conv_b_2_context=create_conv_para(rng, filter_shape=(hidden_size[1], 1, hidden_size[0], 1))    
+#     conv_W_2_context, conv_b_2_context=create_conv_para(rng, filter_shape=(hidden_size[1], 1, hidden_size[0], 1))
+#     att_W = create_ensemble_para(rng, 1, 2*emb_size)
     NN_para=[conv_W, conv_b, conv_W_context]
 #             conv_W_2, conv_b_2,conv_W_2_context]
 
@@ -112,13 +117,16 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.0000001, emb_siz
 #              W_context=conv_W_2_context, b_context=conv_b_2_context)
 #     attentive_sent_embeddings_l_2 = conv_layer_2.attentive_maxpool_vec_l
 #     attentive_sent_embeddings_r_2 = conv_layer_2.attentive_maxpool_vec_r
-    
+
+#     weighted_sum_l, weighted_sum_r=ABCNN(common_input_l*sents_mask_l.dimshuffle(0,'x',1), common_input_r*sents_mask_r.dimshuffle(0,'x',1))
+
     HL_layer_1_input = T.concatenate([attentive_sent_embeddings_l,attentive_sent_embeddings_r, attentive_sent_embeddings_l*attentive_sent_embeddings_r, cosine_matrix1_matrix2_rowwise(attentive_sent_embeddings_l,attentive_sent_embeddings_r).dimshuffle(0,'x')],axis=1)
-#                                     attentive_sent_embeddings_l_2,attentive_sent_embeddings_r_2, attentive_sent_embeddings_l_2*attentive_sent_embeddings_r_2, cosine_matrix1_matrix2_rowwise(attentive_sent_embeddings_l_2,attentive_sent_embeddings_r_2).dimshuffle(0,'x')],axis=1)
-    HL_layer_1_input_size = hidden_size[0]*3+1#+hidden_size[1]*3+1
-    
-    HL_layer_1=HiddenLayer(rng, input=HL_layer_1_input, n_in=HL_layer_1_input_size, n_out=hidden_size[0], activation=T.tanh)
-    HL_layer_2=HiddenLayer(rng, input=HL_layer_1.output, n_in=hidden_size[0], n_out=hidden_size[0], activation=T.tanh)
+#                                       conv_layer_0.l_max_cos, conv_layer_0.r_max_cos, conv_layer_0.l_topK_min_max_cos, conv_layer_0.r_topK_min_max_cos],axis=1)
+#                                     weighted_sum_l,weighted_sum_r, weighted_sum_l*weighted_sum_r, cosine_matrix1_matrix2_rowwise(weighted_sum_l,weighted_sum_r).dimshuffle(0,'x')],axis=1)
+    HL_layer_1_input_size = hidden_size[0]*3+1#+(maxSentLen*2+10*2)#+hidden_size[1]*3+1
+
+    HL_layer_1=HiddenLayer(rng, input=HL_layer_1_input, n_in=HL_layer_1_input_size, n_out=hidden_size[0], activation=T.nnet.relu)
+    HL_layer_2=HiddenLayer(rng, input=HL_layer_1.output, n_in=hidden_size[0], n_out=hidden_size[0], activation=T.nnet.relu)
 
     #classification layer, it is just mapping from a feature vector of size "hidden_size" to a vector of only two values: positive, negative
     LR_input_size=HL_layer_1_input_size+2*hidden_size[0]
@@ -130,23 +138,42 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.0000001, emb_siz
     layer_LR=LogisticRegression(rng, input=T.tanh(LR_input), n_in=LR_input_size, n_out=3, W=U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
     loss=layer_LR.negative_log_likelihood(labels)  #for classification task, we usually used negative log likelihood as loss, the lower the better.
 
-    params = [embeddings]+NN_para+LR_para+HL_layer_1.params+HL_layer_2.params   # put all model parameters together
-    L2_reg =L2norm_paraList([embeddings,conv_W, conv_W_context,U_a,HL_layer_1.W, HL_layer_2.W])
-#     diversify_reg= Diversify_Reg(U_a.T)+Diversify_Reg(conv_W_into_matrix)
+    # rank loss
+    # zero_matrix = T.zeros((batch_size, 3))
+    # filled_zero_matrix = T.set_subtensor(zero_matrix[T.arange(batch_size), labels], 1.0)
+    # prob_batch_posi = layer_LR.p_y_given_x[filled_zero_matrix.nonzero()]
+    # prob_batch_nega = layer_LR.p_y_given_x[(1-filled_zero_matrix).nonzero()]
+    #
+    # repeat_posi = T.extra_ops.repeat(prob_batch_posi, prob_batch_nega.shape[0], axis=0)
+    # repeat_nega = T.extra_ops.repeat(prob_batch_nega.dimshuffle('x',0), prob_batch_posi.shape[0], axis=0).flatten()
+    # loss2 = T.mean(T.maximum(0.0, margin-repeat_posi+repeat_nega))
+
+    params_emb = [embeddings]
+    params_NN = NN_para   # put all model parameters together
+    params_HL = HL_layer_1.params+HL_layer_2.params
+    params_LR = LR_para
+#     L2_reg =L2norm_paraList([embeddings,HL_layer_1.W, HL_layer_2.W])
+    # diversify_reg= Diversify_Reg(layer_LR.W.T)#+Diversify_Reg(conv_W_into_matrix)
 
     cost=loss#+L2_weight*L2_reg
 
-    grads = T.grad(cost, params)    # create a list of gradients for all model parameters
-    accumulator=[]
-    for para_i in params:
-        eps_p=np.zeros_like(para_i.get_value(borrow=True),dtype=theano.config.floatX)
-        accumulator.append(theano.shared(eps_p, borrow=True))
-    updates = []
-    for param_i, grad_i, acc_i in zip(params, grads, accumulator):
-        acc = acc_i + T.sqr(grad_i)
-        updates.append((param_i, param_i - learning_rate * grad_i / (T.sqrt(acc)+1e-8)))   #1e-8 is add to get rid of zero division
-        updates.append((acc_i, acc))
-
+#     grads = T.grad(cost, params)    # create a list of gradients for all model parameters
+#     accumulator=[]
+#     for para_i in params:
+#         eps_p=np.zeros_like(para_i.get_value(borrow=True),dtype=theano.config.floatX)
+#         accumulator.append(theano.shared(eps_p, borrow=True))
+#     updates = []
+#     for param_i, grad_i, acc_i in zip(params, grads, accumulator):
+#         acc = acc_i + T.sqr(grad_i)
+#         updates.append((param_i, param_i - learning_rate * grad_i / (T.sqrt(acc)+1e-8)))   #1e-8 is add to get rid of zero division
+#         updates.append((acc_i, acc))
+    
+    updates_emb = Gradient_Cost_Para(cost,params_emb,learning_rate[0])
+    updates_NN = Gradient_Cost_Para(cost,params_NN,learning_rate[1])
+    updates_HL = Gradient_Cost_Para(cost,params_HL,learning_rate[2])
+    updates_LR = Gradient_Cost_Para(cost,params_LR,learning_rate[3])
+    
+    updates = updates_emb+updates_NN+updates_HL+updates_LR
 
     #train_model = theano.function([sents_id_matrix, sents_mask, labels], cost, updates=updates, on_unused_input='ignore')
     train_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, labels], cost, updates=updates, allow_input_downcast=True, on_unused_input='ignore')
@@ -175,13 +202,14 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.0000001, emb_siz
 
     max_acc_dev=0.0
     max_acc_test=0.0
-
+    
+    cost_i=0.0
     while epoch < n_epochs:
         epoch = epoch + 1
         train_indices = range(train_size)
         random.Random(200).shuffle(train_indices) #shuffle training set for each new epoch, is supposed to promote performance, but not garrenteed
         iter_accu=0
-        cost_i=0.0
+        
         for batch_id in train_batch_start: #for each batch
             # iter means how many batches have been run, taking into loop
             iter = (epoch - 1) * n_train_batches + iter_accu +1
@@ -211,7 +239,7 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.0000001, emb_siz
 #                                 dev_masks_r[dev_batch_id:dev_batch_id+batch_size],
 #                                 dev_labels_store[dev_batch_id:dev_batch_id+batch_size]
 #                                 )
-# 
+#
 #                     error_sum+=error_i
 #                 dev_accuracy=1.0-error_sum/(len(dev_batch_start))
 #                 if dev_accuracy > max_acc_dev:
@@ -253,42 +281,33 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.0000001, emb_siz
 
 if __name__ == '__main__':
     evaluate_lenet5()
-    #(learning_rate=0.1, n_epochs=3, L2_weight=0.001, emb_size=30, batch_size=50, filter_size=3, maxSentLen=50, nn='GRU'):
-    # lr_list=[0.1,0.05,0.01,0.005,0.001,0.2,0.3]
-    # emb_list=[10,20,30,40,50,60,70,80,90,100,120,150,200,250,300]
-    # batch_list=[30,40,50,60,70,80,100,150,200,250,300]
-    # maxlen_list=[35,40,45,50,55,60,65,70,75,80]
-    #
-    # best_acc=0.0
-    # best_lr=0.1
-    # for lr in lr_list:
-    #     acc_test= evaluate_lenet5(learning_rate=lr)
-    #     if acc_test>best_acc:
-    #         best_lr=lr
-    #         best_acc=acc_test
-    #     print '\t\t\t\tcurrent best_acc:', best_acc
-    #
-    # best_emb=30
-    # for emb in emb_list:
-    #     acc_test= evaluate_lenet5(learning_rate=best_lr, emb_size=emb)
-    #     if acc_test>best_acc:
-    #         best_emb=emb
-    #         best_acc=acc_test
-    #     print '\t\t\t\tcurrent best_acc:', best_acc
-    #
-    # best_batch=50
-    # for batch in batch_list:
-    #     acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=batch)
-    #     if acc_test>best_acc:
-    #         best_batch=batch
-    #         best_acc=acc_test
-    #     print '\t\t\t\tcurrent best_acc:', best_acc
-    #
-    # best_maxlen=50
-    # for maxlen in maxlen_list:
-    #     acc_test= evaluate_lenet5(learning_rate=best_lr,  emb_size=best_emb,   batch_size=best_batch, maxSentLen=maxlen)
-    #     if acc_test>best_acc:
-    #         best_maxlen=maxlen
-    #         best_acc=acc_test
-    #     print '\t\t\t\tcurrent best_acc:', best_acc
-    # print 'Hyper tune finished, best test acc: ', best_acc, ' by  lr: ', best_lr, ' emb: ', best_emb, ' batch: ', best_batch, ' maxlen: ', best_maxlen
+    #def evaluate_lenet5(learning_rate=0.01, n_epochs=4, L2_weight=0.0000001, div_weight=0.00001, emb_size=300, batch_size=50, filter_size=[3,1], maxSentLen=50, hidden_size=[300,300], margin =0.2, comment='HL relu'):
+
+#     lr_list=[0.01,0.02,0.008,0.005]
+#     batch_list=[3,5,10,20,30,40,50,60,70,80,100]
+#     maxlen_list=[35,40,45,50,55,60,65,70,75,80]
+# 
+#     best_acc=0.0
+#     best_lr=0.01
+#     for lr in lr_list:
+#         acc_test= evaluate_lenet5(learning_rate=lr)
+#         if acc_test>best_acc:
+#             best_lr=lr
+#             best_acc=acc_test
+#         print '\t\t\t\tcurrent best_acc:', best_acc
+#     best_batch=50
+#     for batch in batch_list:
+#         acc_test= evaluate_lenet5(learning_rate=best_lr,  batch_size=batch)
+#         if acc_test>best_acc:
+#             best_batch=batch
+#             best_acc=acc_test
+#         print '\t\t\t\tcurrent best_acc:', best_acc
+# 
+#     best_maxlen=50
+#     for maxlen in maxlen_list:
+#         acc_test= evaluate_lenet5(learning_rate=best_lr,  batch_size=best_batch, maxSentLen=maxlen)
+#         if acc_test>best_acc:
+#             best_maxlen=maxlen
+#             best_acc=acc_test
+#         print '\t\t\t\tcurrent best_acc:', best_acc
+#     print 'Hyper tune finished, best test acc: ', best_acc, ' by  lr: ', best_lr, ' batch: ', best_batch, ' maxlen: ', best_maxlen
