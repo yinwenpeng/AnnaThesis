@@ -167,21 +167,39 @@ def load_SNLI_dataset(maxlen=40):
             if len(parts)==3:
 
                 label=int(parts[0])  # keep label be 0 or 1
-                sentence_wordlist_l=parts[1].strip().split()
-                sentence_wordlist_r=parts[2].strip().split()
+                sentence_wordlist_l=parts[1].strip().lower().split()
+                if sentence_wordlist_l[-1]=='.':
+                    sentence_wordlist_l=sentence_wordlist_l[:-1]
+                sentence_wordlist_r=parts[2].strip().lower().split()
+                if sentence_wordlist_r[-1]=='.':
+                    sentence_wordlist_r=sentence_wordlist_r[:-1]
                 l_len=len(sentence_wordlist_l)
                 r_len = len(sentence_wordlist_r)
                 if l_len > max_sen_len:
                     max_sen_len=l_len
                 if r_len > max_sen_len:
                     max_sen_len=r_len
-                labels.append(label)
+                
                 sent_idlist_l, sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_l, word2id, maxlen)
                 sent_idlist_r, sent_masklist_r=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_r, word2id, maxlen)
+                
+                
                 sents_l.append(sent_idlist_l)
                 sents_masks_l.append(sent_masklist_l)
                 sents_r.append(sent_idlist_r)
                 sents_masks_r.append(sent_masklist_r)
+                labels.append(label)
+                
+#                 if i==0:#train file
+#                     if label == 1 or label ==0:
+#                         sents_l.append(sent_idlist_r)
+#                         sents_masks_l.append(sent_masklist_r)
+#                         sents_r.append(sent_idlist_l)
+#                         sents_masks_r.append(sent_masklist_l)
+#                         labels.append(label)   
+
+                                             
+                
         all_sentences_l.append(sents_l)
         all_sentences_r.append(sents_r)
         all_masks_l.append(sents_masks_l)

@@ -169,7 +169,7 @@ def ABCNN(left_T, right_T):
 class Conv_for_Pair(object):
     """we define CNN by input tensor3 and output tensor3, like RNN, filter width must by 3,5,7..."""
 
-    def __init__(self, rng, input_tensor3, input_tensor3_r, mask_matrix, mask_matrix_r, filter_shape, filter_shape_context,image_shape, image_shape_r,W, b, W_context, b_context):
+    def __init__(self, rng, origin_input_tensor3, origin_input_tensor3_r, input_tensor3, input_tensor3_r, mask_matrix, mask_matrix_r, filter_shape, filter_shape_context,image_shape, image_shape_r,W, b, W_context, b_context):
         #construct interaction matrix
         input_tensor3 = input_tensor3*mask_matrix.dimshuffle(0,'x',1)
         input_tensor3_r = input_tensor3_r*mask_matrix_r.dimshuffle(0,'x',1) #(batch, hidden, r_len)
@@ -189,7 +189,7 @@ class Conv_for_Pair(object):
         '''
 #         Conc_T = T.concatenate([T.extra_ops.repeat(input_tensor3, input_tensor3_r.shape[2], axis=2), T.tile(input_tensor3_r, (1,1,input_tensor3.shape[2]))], axis=1) #(batch, 2hidden, l_len*r_len)
 #         dot_tensor3 = Conc_T.dimshuffle(0,2,1).dot(att_W).reshape((input_tensor3.shape[0], input_tensor3.shape[2], input_tensor3_r.shape[2]))#(batch, l_len, r_len)
-        
+
 #         dot_mask=T.cast((1.0-dot_mask)*(dot_mask-100000), 'float32')#(batch, l_len, r_len)
 #         dot_tensor3 = dot_tensor3 + dot_mask
 
@@ -202,7 +202,7 @@ class Conv_for_Pair(object):
         weighted_sum_l = T.batched_dot(dot_tensor3_for_left, input_tensor3.dimshuffle(0,2,1)).dimshuffle(0,2,1)*mask_matrix_r.dimshuffle(0,'x',1) #(batch,hidden, r_len)
 
         #convolve left, weighted sum r
-        conv_model_l = Conv_with_Mask(rng, input_tensor3=input_tensor3,
+        conv_model_l = Conv_with_Mask(rng, input_tensor3=origin_input_tensor3,
                  mask_matrix = mask_matrix,
                  image_shape=image_shape,
                  filter_shape=filter_shape, W=W, b=b)
@@ -223,9 +223,12 @@ class Conv_for_Pair(object):
         mask_for_conv_output_l=(1.0-mask_for_conv_output_l)*(mask_for_conv_output_l-10)
         masked_conv_output_l=self.conv_attend_out_l+mask_for_conv_output_l      #mutiple mask with the conv_out to set the features by UNK to zero
         self.attentive_maxpool_vec_l=T.max(masked_conv_output_l, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
+        self.group_max_pools_l = T.signal.pool.pool_2d(input=self.conv_out_l, ds=(1,10), ignore_border=True) #(batch, hidden, 5)
+        self.all_att_maxpool_vecs_l = T.concatenate([self.attentive_maxpool_vec_l.dimshuffle(0,1,'x'), self.group_max_pools_l], axis=2) #(batch, hidden, 6)
+
 
         #convolve right, weighted sum l
-        conv_model_r = Conv_with_Mask(rng, input_tensor3=input_tensor3_r,
+        conv_model_r = Conv_with_Mask(rng, input_tensor3=origin_input_tensor3_r,
                  mask_matrix = mask_matrix_r,
                  image_shape=image_shape_r,
                  filter_shape=filter_shape, W=W, b=b)
@@ -246,7 +249,23 @@ class Conv_for_Pair(object):
         mask_for_conv_output_r=(1.0-mask_for_conv_output_r)*(mask_for_conv_output_r-10)
         masked_conv_output_r=self.conv_attend_out_r+mask_for_conv_output_r      #mutiple mask with the conv_out to set the features by UNK to zero
         self.attentive_maxpool_vec_r=T.max(masked_conv_output_r, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
+        self.group_max_pools_r = T.signal.pool.pool_2d(input=self.conv_out_r, ds=(1,10), ignore_border=True) #(batch, hidden, 5)
+        self.all_att_maxpool_vecs_r = T.concatenate([self.attentive_maxpool_vec_r.dimshuffle(0,1,'x'), self.group_max_pools_r], axis=2) #(batch, hidden, 6)
 
+class Conv_with_Mask_with_Gate(object):
+    """we define CNN by input tensor3 and output tensor3, like RNN, filter width must by 3,5,7..."""
+
+    def __init__(self, rng, input_tensor3, mask_matrix, filter_shape, image_shape, W, b, W_gate, b_gate):
+        conv_layer = Conv_with_Mask(rng, input_tensor3=input_tensor3,
+                 mask_matrix = mask_matrix,
+                 image_shape=image_shape,
+                 filter_shape=filter_shape, W=W, b=b)
+
+        gate_layer = Conv_with_Mask(rng, input_tensor3=input_tensor3,
+                 mask_matrix = mask_matrix,
+                 image_shape=image_shape,
+                 filter_shape=filter_shape, W=W_gate, b=b_gate)
+        self.output_tensor3 =   gate_layer.masked_conv_out_sigmoid*input_tensor3+(1.0-gate_layer.masked_conv_out_sigmoid)*conv_layer.masked_conv_out
 
 class Conv_with_Mask(object):
     """we define CNN by input tensor3 and output tensor3, like RNN, filter width must by 3,5,7..."""
@@ -279,10 +298,17 @@ class Conv_with_Mask(object):
 
         self.masked_conv_out=conv_output_tensor3*mask_matrix.dimshuffle(0,'x',1) #(batch, hidden_size, len)
 
+        conv_with_bias_sigmoid = T.nnet.sigmoid(conv_out + self.b.dimshuffle('x', 0, 'x', 'x'))
+        conv_output_tensor3_sigmoid=conv_with_bias_sigmoid.reshape((image_shape[0], filter_shape[0], image_shape[3])) #(batch, 1, kernerl, ishape[1]-filter_size1[1]+1)
+
+        self.masked_conv_out_sigmoid=conv_output_tensor3_sigmoid*mask_matrix.dimshuffle(0,'x',1) #(batch, hidden_size, len)
+
+
         mask_for_conv_output=T.repeat(mask_matrix.dimshuffle(0,'x',1), filter_shape[0], axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
         mask_for_conv_output=(1.0-mask_for_conv_output)*(mask_for_conv_output-10)
         masked_conv_output=self.masked_conv_out+mask_for_conv_output      #mutiple mask with the conv_out to set the features by UNK to zero
-        self.maxpool_vec=T.max(masked_conv_output, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
+        self.masked_conv_out_plus_mask = masked_conv_output
+        self.maxpool_vec=T.max(self.masked_conv_out_plus_mask, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
 
         self.params = [self.W, self.b]
 class Conv_with_input_para(object):
@@ -1292,18 +1318,34 @@ class GRU_Average_Pooling_Scan(object):
 
 #         self.params = [self.W]
 
-def drop(input, p, rng):
-    """
-    :type input: numpy.array
-    :param input: layer or weight matrix on which dropout resp. dropconnect is applied
+# def drop(input, p, rng):
+#     """
+#     :type input: numpy.array
+#     :param input: layer or weight matrix on which dropout resp. dropconnect is applied
+#
+#     :type p: float or double between 0. and 1.
+#     :param p: p probability of NOT dropping out a unit or connection, therefore (1.-p) is the drop rate.
+#
+#     """
+#     srng = T.shared_randomstreams.RandomStreams(rng.randint(999999))
+#     mask = srng.binomial(n=1, p=p, size=input.shape, dtype=theano.config.floatX)
+#     return input * mask
 
-    :type p: float or double between 0. and 1.
-    :param p: p probability of NOT dropping out a unit or connection, therefore (1.-p) is the drop rate.
+def dropit(srng, weight, drop):
+    # proportion of probability to retain
+    retain_prob = 1 - drop
+    mask = srng.binomial(n=1, p=retain_prob, size=weight.shape, dtype='floatX')
+    return T.cast(weight * mask, theano.config.floatX)
 
-    """
-    srng = T.shared_randomstreams.RandomStreams(rng.randint(999999))
-    mask = srng.binomial(n=1, p=p, size=input.shape, dtype=theano.config.floatX)
-    return input * mask
+def dont_dropit(weight, drop):
+    return (1 - drop)*T.cast(weight, theano.config.floatX)
+
+def dropout_layer(srng,weight, drop, train):
+    result = theano.ifelse.ifelse(T.eq(train, 1),
+                                    dropit(srng, weight, drop),
+                                    dont_dropit(weight, drop))
+    return result
+
 class Average_Pooling_RNN(object):
     """The input is output of Conv: a tensor.  The output here should also be tensor"""
 
@@ -1704,6 +1746,18 @@ def Gradient_Cost_Para(cost,params,learning_rate):
         acc = acc_i + T.sqr(grad_i)
         updates.append((param_i, param_i - learning_rate * grad_i / (T.sqrt(acc)+1e-8)))   #1e-8 is add to get rid of zero division
         updates.append((acc_i, acc))
-    
+
     return updates
-    
+
+
+def elementwise_is_zero(mat):
+    #if 0 to be 1.0, otherwise 0.0
+    a = T.where( mat < 0, 1, mat)
+    b = T.where( a > 0, 1, a)
+    return  T.cast(1-b, 'int32')
+
+def elementwise_is_two(mat):
+    #if 0 to be 1.0, otherwise 0.0
+    a = T.where( mat < 2, 1, mat)
+
+    return  T.cast(a-1, 'int32')
