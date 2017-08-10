@@ -267,6 +267,12 @@ class Conv_with_Mask_with_Gate(object):
                  filter_shape=filter_shape, W=W_gate, b=b_gate)
         self.output_tensor3 =   gate_layer.masked_conv_out_sigmoid*input_tensor3+(1.0-gate_layer.masked_conv_out_sigmoid)*conv_layer.masked_conv_out
 
+        mask_for_conv_output=T.repeat(mask_matrix.dimshuffle(0,'x',1), filter_shape[0], axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
+        mask_for_conv_output=(1.0-mask_for_conv_output)*(mask_for_conv_output-10)
+        masked_conv_output=self.output_tensor3+mask_for_conv_output      #mutiple mask with the conv_out to set the features by UNK to zero
+        self.maxpool_vec=T.max(masked_conv_output, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
+
+
 class Conv_with_Mask(object):
     """we define CNN by input tensor3 and output tensor3, like RNN, filter width must by 3,5,7..."""
 
