@@ -169,7 +169,8 @@ def ABCNN(left_T, right_T):
 class Conv_for_Pair(object):
     """we define CNN by input tensor3 and output tensor3, like RNN, filter width must by 3,5,7..."""
 
-    def __init__(self, rng, origin_input_tensor3, origin_input_tensor3_r, input_tensor3, input_tensor3_r, mask_matrix, mask_matrix_r, filter_shape, filter_shape_context,image_shape, image_shape_r,W, b, W_context, b_context):
+    def __init__(self, rng, origin_input_tensor3, origin_input_tensor3_r, input_tensor3, input_tensor3_r, mask_matrix, mask_matrix_r, 
+                 filter_shape, filter_shape_context,image_shape, image_shape_r,W, b, W_context, b_context):
         #construct interaction matrix
         input_tensor3 = input_tensor3*mask_matrix.dimshuffle(0,'x',1)
         input_tensor3_r = input_tensor3_r*mask_matrix_r.dimshuffle(0,'x',1) #(batch, hidden, r_len)
@@ -1565,7 +1566,8 @@ def compute_acc(label_list, scores_list):
 #def unify_eachone(tensor, left1, right1, left2, right2, dim, Np):
 
 def Diversify_Reg(W):
-    loss=((W.dot(W.T)-T.eye(n=W.shape[0], m=W.shape[0], k=0, dtype=theano.config.floatX))**2).sum()
+    # (L, feature size), e.g., (output_size, input_size)
+    loss=(T.nnet.sigmoid(W.dot(W.T)-T.eye(n=W.shape[0], m=W.shape[0], k=0, dtype=theano.config.floatX))**2).mean()
     return loss
 
 def Determinant(W):
@@ -1767,3 +1769,25 @@ def elementwise_is_two(mat):
     a = T.where( mat < 2, 1, mat)
 
     return  T.cast(a-1, 'int32')
+
+def Two_Tensor2_Interact_ConvPool(tensor1, tensor2, mask1, mask2, W2score, conv_W, conv_b, filter_shape, images_shape, poolsize):
+    #both tensor in form (batch, hidden, len)
+    #pool size, e.g., (1,10)
+    re_tensor1 = T.extra_ops.repeat(tensor1, tensor2.shape[2], axis=2) #(batch, hidden, l_len*r_len)
+    re_tensor2 = T.tile(tensor2, (1,1,tensor1.shape[2])) #(batch, hidden, r_len*l_len)
+    conc_tensor = T.concatenate([re_tensor1, re_tensor2], axis=1) #(batch, 2*hidden, len*len)
+    conv_input = T.tanh(conc_tensor.dimshuffle(0,2,1).dot(W2score)).dimshuffle(0,2,1).reshape((tensor1.shape[0],W2score.shape[1], tensor1.shape[2], tensor2.shape[2])) #(batch, kern, l_len, r_len)
+
+    mask = T.batched_dot(mask1.dimshuffle(0,1,'x'), mask2.dimshuffle(0,'x',1)).dimshuffle(0,'x',1,2) #(batch, l_len, r_len)
+    conv_input = conv_input*mask
+
+#     conv_input = scores_tensor.dimshuffle(0,'x',1,2) #(batch, 1, l_len, r_len)
+    raw_conv_out = conv.conv2d(input=conv_input, filters=conv_W,
+                filter_shape=filter_shape, image_shape=images_shape, border_mode='valid') 
+    conv_out = T.tanh(raw_conv_out + conv_b.dimshuffle('x', 0, 'x', 'x'))
+    pool_out = T.signal.pool.pool_2d(input=conv_out, ds=poolsize, ignore_border=True) #(batch, kern, height, width)
+    
+    output_matrix = pool_out.reshape((pool_out.shape[0], pool_out.shape[1]*pool_out.shape[2]*pool_out.shape[3]))
+#     feature_size = 
+    return output_matrix
+    

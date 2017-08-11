@@ -16,8 +16,8 @@ def transfer_wordlist_2_idlist_with_maxlen(token_list, vocab_map, maxlen):
     for word in token_list:
         position = word.find('-')
         if position<0:
-            if word not in string.punctuation:
-                word =  word.translate(None, string.punctuation)
+#             if word not in string.punctuation:
+#                 word =  word.translate(None, string.punctuation)
             id=vocab_map.get(word)
             if id is None: # if word was not in the vocabulary
                 id=len(vocab_map)+1  # id of true words starts from 1, leaving 0 to "pad id"
@@ -26,8 +26,8 @@ def transfer_wordlist_2_idlist_with_maxlen(token_list, vocab_map, maxlen):
         else:
             subwords = word.split('-')
             for subword in subwords:
-                if subword not in string.punctuation:
-                    subword =  subword.translate(None, string.punctuation)
+#                 if subword not in string.punctuation:
+#                     subword =  subword.translate(None, string.punctuation)
                 id=vocab_map.get(subword)
                 if id is None: # if word was not in the vocabulary
                     id=len(vocab_map)+1  # id of true words starts from 1, leaving 0 to "pad id"

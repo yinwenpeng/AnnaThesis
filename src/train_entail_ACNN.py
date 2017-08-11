@@ -23,7 +23,7 @@ from common_functions import Conv_for_Pair,dropout_layer, elementwise_is_two,Con
 1, use SVM outside
 '''
 
-def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0.0000001, extra_size=4, use_svm=False, drop_p=0.1, div_weight=0.00001, emb_size=300, batch_size=50, filter_size=[3,3], maxSentLen=40, hidden_size=[300,300], margin =0.1, comment='extend word2vec, recover drop0.1'):
+def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0.0000001, extra_size=4, use_svm=False, drop_p=0.1, div_weight=0.00001, emb_size=300, batch_size=50, filter_size=[3,3], maxSentLen=40, hidden_size=[300,300], margin =0.1, comment='recover drop0.1'):
 
     model_options = locals().copy()
     print "model options", model_options
@@ -75,7 +75,7 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
     rand_values[0]=np.array(np.zeros(emb_size),dtype=theano.config.floatX)
     id2word = {y:x for x,y in word2id.iteritems()}
     word2vec=load_word2vec()
-    word2vec =extend_word2vec_lowercase(word2vec)
+#     word2vec =extend_word2vec_lowercase(word2vec)
     rand_values=load_word2vec_to_init(rand_values, id2word, word2vec)
 #     normed_matrix = normalize(rand_values, axis=0, norm='l2')
     embeddings=theano.shared(value=np.array(rand_values,dtype=theano.config.floatX), borrow=True)   #wrap up the python variable "rand_values" into theano variable
@@ -108,6 +108,12 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
     conv_W_2, conv_b_2=create_conv_para(rng, filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[0]))
     conv_W_2_context, conv_b_2_context=create_conv_para(rng, filter_shape=(hidden_size[1], 1, hidden_size[0], 1))
 #     att_W = create_ensemble_para(rng, 1, 2*emb_size)
+#     conv_W_2_pre_to_matrix = conv_W_2_pre.reshape((conv_W_2_pre.shape[0], conv_W_2_pre.shape[2]*conv_W_2_pre.shape[3]))
+#     conv_W_2_gate_to_matrix = conv_W_2_gate.reshape((conv_W_2_gate.shape[0], conv_W_2_gate.shape[2]*conv_W_2_gate.shape[3]))
+#     conv_W_2_to_matrix = conv_W_2.reshape((conv_W_2.shape[0], conv_W_2.shape[2]*conv_W_2.shape[3]))
+#     conv_W_2_context_to_matrix = conv_W_2_context.reshape((conv_W_2_context.shape[0], conv_W_2_context.shape[2]*conv_W_2_context.shape[3]))
+    
+    
     '''
     dropout paras
     '''
@@ -233,7 +239,9 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
     params_HL = HL_layer_1.params+HL_layer_2.params
     params_LR = LR_para
 #     L2_reg =L2norm_paraList([embeddings,HL_layer_1.W, HL_layer_2.W])
-    # diversify_reg= Diversify_Reg(layer_LR.W.T)#+Diversify_Reg(conv_W_into_matrix)
+
+#     diversify_reg= (Diversify_Reg(conv_W_2_pre_to_matrix)+Diversify_Reg(conv_W_2_gate_to_matrix)+
+#                     Diversify_Reg(conv_W_2_to_matrix)+Diversify_Reg(conv_W_2_context_to_matrix))
 
     cost=loss#+0.1*loss2#+loss2#+L2_weight*L2_reg
 
