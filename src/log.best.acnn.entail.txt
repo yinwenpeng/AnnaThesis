@@ -1,0 +1,55 @@
+wenpeng@gamma:~/workspace/AnnaThesis/src> THEANO_FLAGS=mode=FAST_RUN,device=gpu3,floatX=float32 /opt/anaconda2/bin/python -u train_entail_ACNN.py
+Using gpu device 3: GeForce GTX 1080 (CNMeM is disabled, cuDNN not available)
+/opt/anaconda2/lib/python2.7/site-packages/theano/tensor/signal/downsample.py:6: UserWarning: downsample module has been moved to the theano.tensor.signal.pool module.
+  "downsample module has been moved to the theano.tensor.signal.pool module.")
+model options {'comment': 'recover drop0.1', 'drop_p': 0.1, 'use_svm': False, 'extra_size': 4, 'learning_rate': [0.02, 0.02, 0.02, 0.02], 'batch_size': 50, 'n_epochs': 4, 'emb_size': 300, 'filter_size': [3, 3], 'maxSentLen': 40, 'div_weight': 1e-05, 'L2_weight': 1e-07, 'hidden_size': [300, 300], 'margin': 0.1}
+loading file: /mounts/data/proj/wenpeng/Dataset/StanfordEntailment/train.txt ...
+                         size: 549367 pairs
+loading file: /mounts/data/proj/wenpeng/Dataset/StanfordEntailment/dev.txt ...
+                         size: 9842 pairs
+loading file: /mounts/data/proj/wenpeng/Dataset/StanfordEntailment/test.txt ...
+                         size: 9824 pairs
+dataset loaded over, totally  34394 words, max sen len: 81
+train size:  549367  dev size:  9842  test size:  9824
+==> loading 300d word2vec
+==> word2vec is loaded
+==> use word2vec initialization over...fail  6982
+... building the model
+... training
+Epoch  1 iter 2000 average cost: 0.647815320119 uses  3.0173404177 min
+                current testbacc: 0.80345177665                                         max_acc_test: 0.80345177665
+Epoch  1 iter 4000 average cost: 0.581948396221 uses  3.08075915178 min
+                current testbacc: 0.825482233503                                        max_acc_test: 0.825482233503
+Epoch  1 iter 6000 average cost: 0.546845705343 uses  3.07984486818 min
+                current testbacc: 0.833807106599                                        max_acc_test: 0.833807106599
+Epoch  1 iter 8000 average cost: 0.524638159452 uses  3.08053071499 min
+                current testbacc: 0.843654822335                                        max_acc_test: 0.843654822335
+Epoch  1 iter 10000 average cost: 0.50769500715 uses  3.08254923423 min
+                current testbacc: 0.84883248731                                         max_acc_test: 0.84883248731
+Epoch  1 uses  16.8958164851 min
+Epoch  2 iter 12000 average cost: 0.48836398702 uses  3.0823911349 min
+                current testbacc: 0.853502538071                                        max_acc_test: 0.853502538071
+Epoch  2 iter 14000 average cost: 0.468688779935 uses  3.08732570012 min
+                current testbacc: 0.853299492386                                        max_acc_test: 0.853502538071
+Epoch  2 iter 16000 average cost: 0.453640452415 uses  3.08530744712 min
+                current testbacc: 0.848527918782                                        max_acc_test: 0.853502538071
+Epoch  2 iter 18000 average cost: 0.442523157976 uses  3.09130523205 min
+                current testbacc: 0.855736040609                                        max_acc_test: 0.855736040609
+Epoch  2 iter 20000 average cost: 0.433627541052 uses  3.08828336795 min
+                current testbacc: 0.857868020305                                        max_acc_test: 0.857868020305
+Epoch  2 uses  16.9201532324 min
+Epoch  3 iter 22000 average cost: 0.425567103171 uses  3.08219294945 min
+                current testbacc: 0.859289340102                                        max_acc_test: 0.859289340102
+Epoch  3 iter 24000 average cost: 0.413083426674 uses  3.07394373417 min
+                current testbacc: 0.855736040609                                        max_acc_test: 0.859289340102
+Epoch  3 iter 26000 average cost: 0.402611419938 uses  3.08340529998 min
+                current testbacc: 0.856446700508                                        max_acc_test: 0.859289340102
+Epoch  3 iter 28000 average cost: 0.394012059351 uses  3.08336913586 min
+                current testbacc: 0.855329949239                                        max_acc_test: 0.859289340102
+Epoch  3 iter 30000 average cost: 0.38681663408 uses  3.08464438518 min
+                current testbacc: 0.857055837563                                        max_acc_test: 0.859289340102
+Epoch  3 iter 32000 average cost: 0.380788483189 uses  3.08120708466 min
+                current testbacc: 0.85847715736                                         max_acc_test: 0.859289340102
+Epoch  3 uses  16.9702022831 min
+Epoch  4 iter 34000 average cost: 0.373476818069 uses  3.0915340662 min
+                current testbacc: 0.855532994924                                        max_acc_test: 0.859289340102
