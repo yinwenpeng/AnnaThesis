@@ -134,7 +134,11 @@ def create_conv_para(rng, filter_shape):
         b_values = numpy.zeros((filter_shape[0],), dtype=theano.config.floatX)
         b = theano.shared(value=b_values, borrow=True)
         return W, b
-
+def create_conv_bias(rng, hidden_size):
+        # the bias is a 1D tensor -- one bias per output feature map
+        b_values = numpy.zeros((hidden_size,), dtype=theano.config.floatX)
+        b = theano.shared(value=b_values, borrow=True)
+        return b
 def create_rnn_para(rng, dim):
         # initialize weights with random weights
         W_bound = numpy.sqrt(6. / (2*dim + dim))
@@ -219,7 +223,7 @@ class Conv_for_Pair(object):
         combine
         '''
         self.conv_attend_out_l = T.tanh(temp_conv_output_l+ temp_conv_output_weighted_r+ b.dimshuffle('x', 0, 'x'))*mask_matrix.dimshuffle(0,'x',1)
-
+        self.attentive_sumpool_vec_l=T.max(self.conv_attend_out_l, axis=2)
         mask_for_conv_output_l=T.repeat(mask_matrix.dimshuffle(0,'x',1), filter_shape[0], axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
         mask_for_conv_output_l=(1.0-mask_for_conv_output_l)*(mask_for_conv_output_l-10)
         masked_conv_output_l=self.conv_attend_out_l+mask_for_conv_output_l      #mutiple mask with the conv_out to set the features by UNK to zero
@@ -245,7 +249,7 @@ class Conv_for_Pair(object):
         combine
         '''
         self.conv_attend_out_r = T.tanh(temp_conv_output_r+ temp_conv_output_weighted_l+ b.dimshuffle('x', 0, 'x'))*mask_matrix_r.dimshuffle(0,'x',1)
-
+        self.attentive_sumpool_vec_r=T.max(self.conv_attend_out_r, axis=2)
         mask_for_conv_output_r=T.repeat(mask_matrix_r.dimshuffle(0,'x',1), filter_shape[0], axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
         mask_for_conv_output_r=(1.0-mask_for_conv_output_r)*(mask_for_conv_output_r-10)
         masked_conv_output_r=self.conv_attend_out_r+mask_for_conv_output_r      #mutiple mask with the conv_out to set the features by UNK to zero
@@ -1790,4 +1794,40 @@ def Two_Tensor2_Interact_ConvPool(tensor1, tensor2, mask1, mask2, W2score, conv_
     output_matrix = pool_out.reshape((pool_out.shape[0], pool_out.shape[1]*pool_out.shape[2]*pool_out.shape[3]))
 #     feature_size = 
     return output_matrix
+    
+def Two_Tensor3_Conv_Mutually(rng, tensor1, tensor2, mask1, mask2, hidden_size, filter_size, l_len, r_len, b):
+    #tensor3 (batch, hidden, len) to filter
+    
+    def one_pair(matrix1, matrix2, mask_1, mask_2):
+        #mask is a vector
+        s_tensor3_1 = matrix1.dimshuffle('x',0,1) #(1, hidden, l_len)
+        s_tensor3_2 = matrix2.dimshuffle('x',0,1) #(1, hidden, r_len)
+        matrix1_slices=[]
+        for i in range(filter_size):
+            matrix1_slices.append(matrix1[:,i:i+(matrix1.shape[1]-filter_size+1)].dimshuffle('x',0,1)) #(1, hidden_size, l_len-filter_size+1)
+        s1_as_filter = T.concatenate(matrix1_slices, axis=0).dimshuffle(2,'x',1,0) #(l_len-filter+1, 1, emb, filter_size)
+        
+        matrix2_slices=[]
+        for i in range(filter_size):
+            matrix2_slices.append(matrix2[:,i:i+(matrix2.shape[1]-filter_size+1)].dimshuffle('x',0,1))
+        s2_as_filter = T.concatenate(matrix2_slices, axis=0).dimshuffle(2,'x',1,0) #(r_len-filter+1, 1, emb, filter_size)
+         
+        conv_s1 = Conv_with_Mask(rng, input_tensor3=s_tensor3_1,
+         mask_matrix = mask_1.dimshuffle('x',0),
+         image_shape=(1, 1, hidden_size, l_len),
+         filter_shape=(r_len-filter_size+1, 1, hidden_size, filter_size), W=s2_as_filter, b=b)
+
+        conv_s2 = Conv_with_Mask(rng, input_tensor3=s_tensor3_2,
+         mask_matrix = mask_2.dimshuffle('x',0),
+         image_shape=(1, 1, hidden_size, r_len),
+         filter_shape=(l_len-filter_size+1, 1, hidden_size, filter_size), W=s1_as_filter, b=b)    
+        
+        return conv_s1.maxpool_vec, conv_s2.maxpool_vec  #(1, new_hidden_size)
+    
+    result_pair, updates = theano.scan(fn=one_pair,
+                        sequences=[tensor1, tensor2,mask1, mask2])
+    batch_l_maxpool = result_pair[0] #(batch, 1, r_len-filter_size+1)
+    batch_r_maxpool = result_pair[1] #(batch, l_len-filter_size+1)
+    return batch_l_maxpool.reshape((batch_l_maxpool.shape[0],batch_l_maxpool.shape[2])), batch_r_maxpool.reshape((batch_r_maxpool.shape[0],batch_r_maxpool.shape[2]))
+    
     

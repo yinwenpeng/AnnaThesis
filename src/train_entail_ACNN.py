@@ -23,14 +23,20 @@ from common_functions import Conv_for_Pair,dropout_layer, elementwise_is_two,Con
 1, use SVM outside
 '''
 
-def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0.0000001, extra_size=4, use_svm=False, drop_p=0.1, div_weight=0.00001, emb_size=300, batch_size=50, filter_size=[3,3], maxSentLen=40, hidden_size=[300,300], margin =0.1, comment='recover drop0.1'):
+def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0.0000001, extra_size=4, use_svm=False, drop_p=0.1, div_weight=0.00001, emb_size=300, batch_size=50, filter_size=[3,3], maxSentLen=40, hidden_size=[300,300], margin =0.1, comment='two copies from gate'):
 
     model_options = locals().copy()
     print "model options", model_options
 
-    np.random.seed(1234)
-    rng = np.random.RandomState(1234)    #random seed, control the model generates the same results
+    seed=1234
+    np.random.seed(seed)
+    rng = np.random.RandomState(seed)    #random seed, control the model generates the same results
     srng = RandomStreams(rng.randint(999999))
+
+    second_seed=5678
+    np.random.seed(second_seed)
+    second_rng = np.random.RandomState(second_seed)    #random seed, control the model generates the same results
+    second_srng = RandomStreams(second_rng.randint(888888))
 
     all_sentences_l, all_masks_l, all_sentences_r, all_masks_r, all_extra, all_labels, word2id  =load_SNLI_dataset_with_extra(maxlen=maxSentLen)  #minlen, include one label, at least one word in the sentence
     train_sents_l=np.asarray(all_sentences_l[0], dtype='int32')
@@ -107,13 +113,18 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
     conv_W_2_gate, conv_b_2_gate=create_conv_para(rng, filter_shape=gate_filter_shape)
     conv_W_2, conv_b_2=create_conv_para(rng, filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[0]))
     conv_W_2_context, conv_b_2_context=create_conv_para(rng, filter_shape=(hidden_size[1], 1, hidden_size[0], 1))
+
+    second_conv_W_2_pre, second_conv_b_2_pre=create_conv_para(second_rng, filter_shape=gate_filter_shape)
+    second_conv_W_2_gate, second_conv_b_2_gate=create_conv_para(second_rng, filter_shape=gate_filter_shape)
+    second_conv_W_2, second_conv_b_2=create_conv_para(second_rng, filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[0]))
+    second_conv_W_2_context, second_conv_b_2_context=create_conv_para(second_rng, filter_shape=(hidden_size[1], 1, hidden_size[0], 1))
 #     att_W = create_ensemble_para(rng, 1, 2*emb_size)
 #     conv_W_2_pre_to_matrix = conv_W_2_pre.reshape((conv_W_2_pre.shape[0], conv_W_2_pre.shape[2]*conv_W_2_pre.shape[3]))
 #     conv_W_2_gate_to_matrix = conv_W_2_gate.reshape((conv_W_2_gate.shape[0], conv_W_2_gate.shape[2]*conv_W_2_gate.shape[3]))
 #     conv_W_2_to_matrix = conv_W_2.reshape((conv_W_2.shape[0], conv_W_2.shape[2]*conv_W_2.shape[3]))
 #     conv_W_2_context_to_matrix = conv_W_2_context.reshape((conv_W_2_context.shape[0], conv_W_2_context.shape[2]*conv_W_2_context.shape[3]))
-    
-    
+
+
     '''
     dropout paras
     '''
@@ -121,10 +132,20 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
     drop_conv_W_2_gate = dropout_layer(srng, conv_W_2_gate, drop_p, train_flag)
     drop_conv_W_2 = dropout_layer(srng, conv_W_2, drop_p, train_flag)
     drop_conv_W_2_context = dropout_layer(srng, conv_W_2_context, drop_p, train_flag)
+
+    drop_second_conv_W_2_pre = dropout_layer(second_srng, second_conv_W_2_pre, drop_p, train_flag)
+    drop_second_conv_W_2_gate = dropout_layer(second_srng, second_conv_W_2_gate, drop_p, train_flag)
+    drop_second_conv_W_2 = dropout_layer(second_srng, second_conv_W_2, drop_p, train_flag)
+    drop_second_conv_W_2_context = dropout_layer(second_srng, second_conv_W_2_context, drop_p, train_flag)
+
     NN_para=[#conv_W, conv_b,
             conv_W_2_pre, conv_b_2_pre,
             conv_W_2_gate, conv_b_2_gate,
-            conv_W_2, conv_b_2,conv_W_2_context]
+            conv_W_2, conv_b_2,conv_W_2_context,
+
+            second_conv_W_2_pre, second_conv_b_2_pre,
+            second_conv_W_2_gate, second_conv_b_2_gate,
+            second_conv_W_2, second_conv_b_2,second_conv_W_2_context]
 
 #     conv_layer_0 = Conv_for_Pair(rng,
 #             input_tensor3=common_input_l,
@@ -188,7 +209,8 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
              W_context=drop_conv_W_2_context, b_context=conv_b_2_context)
     attentive_sent_embeddings_l_2 = conv_layer_2.attentive_maxpool_vec_l
     attentive_sent_embeddings_r_2 = conv_layer_2.attentive_maxpool_vec_r
-
+    # attentive_sent_sumpool_l_2 = conv_layer_2.attentive_sumpool_vec_l
+    # attentive_sent_sumpool_r_2 = conv_layer_2.attentive_sumpool_vec_r
 #     weighted_sum_l, weighted_sum_r=ABCNN(common_input_l*sents_mask_l.dimshuffle(0,'x',1), common_input_r*sents_mask_r.dimshuffle(0,'x',1))
 
     HL_layer_1_input = T.concatenate([#extra,
@@ -211,6 +233,67 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
     LR_input=T.tanh(T.concatenate([HL_layer_1_input, HL_layer_1.output, HL_layer_2.output],axis=1))
     layer_LR=LogisticRegression(rng, input=LR_input, n_in=LR_input_size, n_out=3, W=U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
     loss=layer_LR.negative_log_likelihood(labels)  #for classification task, we usually used negative log likelihood as loss, the lower the better.
+
+    '''
+    second classifier
+    '''
+    second_conv_layer_2_gate_l = Conv_with_Mask_with_Gate(second_rng, input_tensor3=common_input_l,
+             mask_matrix = sents_mask_l,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_second_conv_W_2_pre, b=second_conv_b_2_pre,
+             W_gate =drop_second_conv_W_2_gate, b_gate=second_conv_b_2_gate )
+    second_conv_layer_2_gate_r = Conv_with_Mask_with_Gate(second_rng, input_tensor3=common_input_r,
+             mask_matrix = sents_mask_r,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_second_conv_W_2_pre, b=second_conv_b_2_pre,
+             W_gate =drop_second_conv_W_2_gate, b_gate=second_conv_b_2_gate )
+
+    second_l_input_4_att = second_conv_layer_2_gate_l.output_tensor3#conv_layer_2_gate_l.masked_conv_out_sigmoid*conv_layer_2_pre_l.masked_conv_out+(1.0-conv_layer_2_gate_l.masked_conv_out_sigmoid)*common_input_l
+    second_r_input_4_att = second_conv_layer_2_gate_r.output_tensor3#conv_layer_2_gate_r.masked_conv_out_sigmoid*conv_layer_2_pre_r.masked_conv_out+(1.0-conv_layer_2_gate_r.masked_conv_out_sigmoid)*common_input_r
+
+    second_conv_layer_2 = Conv_for_Pair(second_rng,
+            origin_input_tensor3=common_input_l,
+            origin_input_tensor3_r = common_input_r,
+            input_tensor3=second_l_input_4_att,
+            input_tensor3_r = second_r_input_4_att,
+             mask_matrix = sents_mask_l,
+             mask_matrix_r = sents_mask_r,
+             image_shape=(batch_size, 1, hidden_size[0], maxSentLen),
+             image_shape_r = (batch_size, 1, hidden_size[0], maxSentLen),
+             filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[1]),
+             filter_shape_context=(hidden_size[1], 1,hidden_size[0], 1),
+             W=drop_second_conv_W_2, b=second_conv_b_2,
+             W_context=drop_second_conv_W_2_context, b_context=second_conv_b_2_context)
+    second_attentive_sent_embeddings_l_2 = second_conv_layer_2.attentive_maxpool_vec_l
+    second_attentive_sent_embeddings_r_2 = second_conv_layer_2.attentive_maxpool_vec_r
+
+    second_HL_layer_1_input = T.concatenate([#extra,
+                                      #attentive_sent_embeddings_l,attentive_sent_embeddings_r, attentive_sent_embeddings_l*attentive_sent_embeddings_r,
+                                      second_attentive_sent_embeddings_l_2,second_attentive_sent_embeddings_r_2, second_attentive_sent_embeddings_l_2*second_attentive_sent_embeddings_r_2],axis=1)
+#                                       weighted_sum_l, weighted_sum_r, weighted_sum_l*weighted_sum_r],axis=1)
+#                                       conv_layer_0.l_max_cos, conv_layer_0.r_max_cos, conv_layer_0.l_topK_min_max_cos, conv_layer_0.r_topK_min_max_cos],axis=1)
+#                                     weighted_sum_l,weighted_sum_r, weighted_sum_l*weighted_sum_r, cosine_matrix1_matrix2_rowwise(weighted_sum_l,weighted_sum_r).dimshuffle(0,'x')],axis=1)
+    second_HL_layer_1_input_size = hidden_size[1]*3#+extra_size#+(maxSentLen*2+10*2)#+hidden_size[1]*3+1
+
+    second_HL_layer_1=HiddenLayer(second_rng, input=second_HL_layer_1_input, n_in=second_HL_layer_1_input_size, n_out=hidden_size[0], activation=T.nnet.relu)
+    second_HL_layer_2=HiddenLayer(second_rng, input=second_HL_layer_1.output, n_in=hidden_size[0], n_out=hidden_size[0], activation=T.nnet.relu)
+
+    #classification layer, it is just mapping from a feature vector of size "hidden_size" to a vector of only two values: positive, negative
+    second_LR_input_size=second_HL_layer_1_input_size+2*hidden_size[0]
+    second_U_a = create_ensemble_para(second_rng, 3, second_LR_input_size) # the weight matrix hidden_size*2
+    second_LR_b = theano.shared(value=np.zeros((3,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class
+    second_LR_para=[second_U_a, second_LR_b]
+
+    second_LR_input=T.tanh(T.concatenate([second_HL_layer_1_input, second_HL_layer_1.output, second_HL_layer_2.output],axis=1))
+    second_layer_LR=LogisticRegression(second_rng, input=second_LR_input, n_in=second_LR_input_size, n_out=3, W=second_U_a, b=second_LR_b) #basically it is a multiplication between weight matrix and input feature vector
+    second_loss=second_layer_LR.negative_log_likelihood(labels)  #for classification task, we usually used negative log likelihood as loss, the lower the better.
+
+    all_prop_distr = layer_LR.p_y_given_x+second_layer_LR.p_y_given_x
+    all_error = T.mean(T.neq(T.argmax(all_prop_distr, axis=1), labels))
+
+
 
 #     neg_labels = T.where( labels < 2, 2, labels-1)
 #     loss2=-T.mean(T.log(1.0/(1.0+layer_LR.p_y_given_x))[T.arange(neg_labels.shape[0]), neg_labels])
@@ -236,14 +319,14 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
 
     params_emb = [embeddings]
     params_NN = NN_para   # put all model parameters together
-    params_HL = HL_layer_1.params+HL_layer_2.params
-    params_LR = LR_para
+    params_HL = HL_layer_1.params+HL_layer_2.params+second_HL_layer_1.params+second_HL_layer_2.params
+    params_LR = LR_para+second_LR_para
 #     L2_reg =L2norm_paraList([embeddings,HL_layer_1.W, HL_layer_2.W])
 
 #     diversify_reg= (Diversify_Reg(conv_W_2_pre_to_matrix)+Diversify_Reg(conv_W_2_gate_to_matrix)+
 #                     Diversify_Reg(conv_W_2_to_matrix)+Diversify_Reg(conv_W_2_context_to_matrix))
 
-    cost=loss#+0.1*loss2#+loss2#+L2_weight*L2_reg
+    cost=loss+second_loss#+0.1*loss2#+loss2#+L2_weight*L2_reg
 
 #     grads = T.grad(cost, params)    # create a list of gradients for all model parameters
 #     accumulator=[]
@@ -268,7 +351,7 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
     train_model_pred = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, train_flag,extra,labels], [LR_input, labels], allow_input_downcast=True, on_unused_input='ignore')
 
     dev_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, train_flag,extra, labels], layer_LR.errors(labels), allow_input_downcast=True, on_unused_input='ignore')
-    test_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, train_flag,extra, labels], layer_LR.errors(labels), allow_input_downcast=True, on_unused_input='ignore')
+    test_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, train_flag,extra, labels], [layer_LR.errors(labels),second_layer_LR.errors(labels),all_error], allow_input_downcast=True, on_unused_input='ignore')
 
     ###############
     # TRAIN MODEL #
@@ -319,6 +402,7 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
 
             #after each 1000 batches, we test the performance of the model on all test data
             if iter%int(2000*(50.0 / batch_size))==0:
+#             if iter%int(200*(50.0 / batch_size))==0:
                 print 'Epoch ', epoch, 'iter '+str(iter)+' average cost: '+str(cost_i/iter), 'uses ', (time.time()-past_time)/60.0, 'min'
                 past_time = time.time()
             # if epoch >=3 and iter >= len(train_batch_start)*2.0/3 and iter%500==0:
@@ -342,10 +426,12 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
 #                     print 'current dev_accuracy:', dev_accuracy, '\t\t\t\t\tmax max_acc_dev:', max_acc_dev
                     #best dev model, do test
                 error_sum=0.0
+                error_sum_j=0.0
+                error_both=0.0
                 test_y=[]
                 test_features=[]
                 for test_batch_id in test_batch_start: # for each test batch
-                    error_i=test_model(
+                    error_i, error_j, both_error_batch=test_model(
                             test_sents_l[test_batch_id:test_batch_id+batch_size],
                             test_masks_l[test_batch_id:test_batch_id+batch_size],
                             test_sents_r[test_batch_id:test_batch_id+batch_size],
@@ -356,13 +442,21 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
                             )
 
                     error_sum+=error_i
+                    error_sum_j+=error_j
+                    error_both+=both_error_batch
 #                     if use_svm and epoch>1:
 #                         test_y+=test_y_batch.tolist()
 #                         test_features+=test_input_batch.tolist()
 
                 test_accuracy=1.0-error_sum/(len(test_batch_start))
+                test_accuracy_j=1.0-error_sum_j/(len(test_batch_start))
+                test_accuracy_both=1.0-error_both/(len(test_batch_start))
                 if test_accuracy > max_acc_test:
                     max_acc_test=test_accuracy
+                if test_accuracy_j > max_acc_test:
+                    max_acc_test=test_accuracy_j
+                if test_accuracy_both > max_acc_test:
+                    max_acc_test=test_accuracy_both
                     '''
                     svm
                     '''
@@ -397,7 +491,7 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
                             write_train.write(' '.join(instance)+'\n')
                         write_train.close()
                         print 'train features written over'
-                print '\t\tcurrent testbacc:', test_accuracy, '\t\t\t\t\tmax_acc_test:', max_acc_test
+                print '\t\tcurrent testbacc:', test_accuracy,test_accuracy_j,test_accuracy_both, '\t\t\t\t\tmax_acc_test:', max_acc_test
 #                 else:
 #                     print 'current dev_accuracy:', dev_accuracy, '\t\t\t\t\tmax max_acc_dev:', max_acc_dev
 
