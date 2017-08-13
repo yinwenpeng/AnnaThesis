@@ -4,7 +4,7 @@ import os
 import sys
 sys.setrecursionlimit(6000)
 import time
-
+from scipy.stats import mode
 import numpy as np
 import theano
 import theano.tensor as T
@@ -385,9 +385,10 @@ def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_s
 
 if __name__ == '__main__':
     root='/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/'
-    para_filenames=['model_para_0.861116751269','model_para_0.860101522843', 'model_para_0.858172588832']
+    para_filenames=['model_para_0.861116751269','model_para_0.860101522843', 'model_para_0.858172588832','model_para_0.85654822335','model_para_0.856345177665']
     ensemble_distr=0.0
     gold_ys = 0
+    majority_preds=[]
     for i in range(len(para_filenames)):
         file_distr, file_gold_ys = evaluate_lenet5(para_filename=root+para_filenames[i])
         gold_ys = file_gold_ys
@@ -399,10 +400,13 @@ if __name__ == '__main__':
         file_acc=1.0-np.not_equal(file_gold_ys, file_pred_ys).sum()*1.0/len(file_gold_ys)
         print 'file_acc:', file_acc
         ensemble_distr+=file_distr
+        majority_preds.append(list(file_pred_ys))
     #compute acc
-    
+    majority_preds = np.asarray(majority_preds, dtype='int32')
+    majority_ys= mode(np.transpose(majority_preds), axis=-1)[0][:,0]
     pred_ys = np.argmax(ensemble_distr, axis=1)
-
+    
+    majority_acc =1.0-np.not_equal(gold_ys, majority_ys).sum()*1.0/len(gold_ys)
     acc=1.0-np.not_equal(gold_ys, pred_ys).sum()*1.0/len(gold_ys)
 
-    print '\t\t\t\t\tensemble_acc_test:', acc
+    print '\t\t\t\t\tensemble_acc_test:', acc, 'majority acc: ', majority_acc
