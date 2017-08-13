@@ -385,7 +385,8 @@ def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_s
 
 if __name__ == '__main__':
     root='/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/'
-    para_filenames=['model_para_0.861116751269','model_para_0.860101522843', 'model_para_0.858172588832','model_para_0.85654822335','model_para_0.856345177665']
+    para_filenames=['model_para_0.861116751269','model_para_0.860101522843', 'model_para_0.858172588832','model_para_0.85654822335','model_para_0.856345177665',
+                    'model_para_0.858375634518']
     ensemble_distr=0.0
     gold_ys = 0
     majority_preds=[]
