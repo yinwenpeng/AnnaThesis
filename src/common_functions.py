@@ -169,7 +169,21 @@ def ABCNN(left_T, right_T):
     dot_matrix_for_left = T.nnet.softmax(T.max(dot_tensor3, axis=2))
     weighted_sum_l = T.batched_dot(dot_matrix_for_left.dimshuffle(0,'x',1), left_T.dimshuffle(0,2,1)).reshape((left_T.shape[0], left_T.shape[1])) #(batch,hidden, r_len)
     return weighted_sum_l,weighted_sum_r
+def Conv_for_Self_Attend(input_tensor3, mask_matrix):
+        #construct interaction matrix
+        input_tensor3 = input_tensor3*mask_matrix.dimshuffle(0,'x',1)
+        input_tensor3_r = input_tensor3
+        mask_matrix_r = mask_matrix
+        input_tensor3_r = input_tensor3_r*mask_matrix_r.dimshuffle(0,'x',1) #(batch, hidden, r_len)
+        dot_tensor3 = T.batched_dot(input_tensor3.dimshuffle(0,2,1),input_tensor3_r) #(batch, l_len, r_len)
 
+        dot_matrix_for_right = T.nnet.softmax(dot_tensor3.reshape((dot_tensor3.shape[0]*dot_tensor3.shape[1], dot_tensor3.shape[2])))
+        dot_tensor3_for_right = dot_matrix_for_right.reshape((dot_tensor3.shape[0], dot_tensor3.shape[1], dot_tensor3.shape[2]))#(batch, l_len, r_len)
+        weighted_sum_r = T.batched_dot(dot_tensor3_for_right, input_tensor3_r.dimshuffle(0,2,1)).dimshuffle(0,2,1)*mask_matrix.dimshuffle(0,'x',1) #(batch,hidden, l_len)
+
+#         self.concat_output_tensor3 = T.concatenate([input_tensor3, weighted_sum_r], axis=1) #(batch, 2*hidden, len)
+        sum_output_tensor3 = input_tensor3+weighted_sum_r
+        return sum_output_tensor3
 class Conv_for_Pair(object):
     """we define CNN by input tensor3 and output tensor3, like RNN, filter width must by 3,5,7..."""
 
@@ -195,6 +209,94 @@ class Conv_for_Pair(object):
 #         Conc_T = T.concatenate([T.extra_ops.repeat(input_tensor3, input_tensor3_r.shape[2], axis=2), T.tile(input_tensor3_r, (1,1,input_tensor3.shape[2]))], axis=1) #(batch, 2hidden, l_len*r_len)
 #         dot_tensor3 = Conc_T.dimshuffle(0,2,1).dot(att_W).reshape((input_tensor3.shape[0], input_tensor3.shape[2], input_tensor3_r.shape[2]))#(batch, l_len, r_len)
 
+#         dot_mask=T.cast((1.0-dot_mask)*(dot_mask-100000), 'float32')#(batch, l_len, r_len)
+#         dot_tensor3 = dot_tensor3 + dot_mask
+
+        dot_matrix_for_right = T.nnet.softmax(dot_tensor3.reshape((dot_tensor3.shape[0]*dot_tensor3.shape[1], dot_tensor3.shape[2])))
+        dot_tensor3_for_right = dot_matrix_for_right.reshape((dot_tensor3.shape[0], dot_tensor3.shape[1], dot_tensor3.shape[2]))#(batch, l_len, r_len)
+        weighted_sum_r = T.batched_dot(dot_tensor3_for_right, input_tensor3_r.dimshuffle(0,2,1)).dimshuffle(0,2,1)*mask_matrix.dimshuffle(0,'x',1) #(batch,hidden, l_len)
+
+        dot_matrix_for_left = T.nnet.softmax(dot_tensor3.dimshuffle(0,2,1).reshape((dot_tensor3.shape[0]*dot_tensor3.shape[2], dot_tensor3.shape[1])))
+        dot_tensor3_for_left = dot_matrix_for_left.reshape((dot_tensor3.shape[0], dot_tensor3.shape[2], dot_tensor3.shape[1]))#(batch, r_len, l_len)
+        weighted_sum_l = T.batched_dot(dot_tensor3_for_left, input_tensor3.dimshuffle(0,2,1)).dimshuffle(0,2,1)*mask_matrix_r.dimshuffle(0,'x',1) #(batch,hidden, r_len)
+
+        #convolve left, weighted sum r
+        conv_model_l = Conv_with_Mask(rng, input_tensor3=origin_input_tensor3,
+                 mask_matrix = mask_matrix,
+                 image_shape=image_shape,
+                 filter_shape=filter_shape, W=W, b=b)
+        temp_conv_output_l = conv_model_l.naked_conv_out
+        self.conv_out_l = conv_model_l.masked_conv_out
+        self.maxpool_vec_l = conv_model_l.maxpool_vec
+        conv_model_weighted_r = Conv_with_Mask(rng, input_tensor3=weighted_sum_r,
+                 mask_matrix = mask_matrix,
+                 image_shape=image_shape,
+                 filter_shape=filter_shape_context, W=W_context, b=b_context) # note that b_context is not used
+        temp_conv_output_weighted_r = conv_model_weighted_r.naked_conv_out
+        '''
+        combine
+        '''
+        self.conv_attend_out_l = T.tanh(temp_conv_output_l+ temp_conv_output_weighted_r+ b.dimshuffle('x', 0, 'x'))*mask_matrix.dimshuffle(0,'x',1)
+        self.attentive_sumpool_vec_l=T.max(self.conv_attend_out_l, axis=2)
+        mask_for_conv_output_l=T.repeat(mask_matrix.dimshuffle(0,'x',1), filter_shape[0], axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
+        mask_for_conv_output_l=(1.0-mask_for_conv_output_l)*(mask_for_conv_output_l-10)
+        masked_conv_output_l=self.conv_attend_out_l+mask_for_conv_output_l      #mutiple mask with the conv_out to set the features by UNK to zero
+        self.attentive_maxpool_vec_l=T.max(masked_conv_output_l, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
+        self.group_max_pools_l = T.signal.pool.pool_2d(input=self.conv_out_l, ds=(1,10), ignore_border=True) #(batch, hidden, 5)
+        self.all_att_maxpool_vecs_l = T.concatenate([self.attentive_maxpool_vec_l.dimshuffle(0,1,'x'), self.group_max_pools_l], axis=2) #(batch, hidden, 6)
+
+
+        #convolve right, weighted sum l
+        conv_model_r = Conv_with_Mask(rng, input_tensor3=origin_input_tensor3_r,
+                 mask_matrix = mask_matrix_r,
+                 image_shape=image_shape_r,
+                 filter_shape=filter_shape, W=W, b=b)
+        temp_conv_output_r = conv_model_r.naked_conv_out
+        self.conv_out_r = conv_model_r.masked_conv_out
+        self.maxpool_vec_r = conv_model_r.maxpool_vec
+        conv_model_weighted_l = Conv_with_Mask(rng, input_tensor3=weighted_sum_l,
+                 mask_matrix = mask_matrix_r,
+                 image_shape=image_shape_r,
+                 filter_shape=filter_shape_context, W=W_context, b=b_context) # note that b_context is not used
+        temp_conv_output_weighted_l = conv_model_weighted_l.naked_conv_out
+        '''
+        combine
+        '''
+        self.conv_attend_out_r = T.tanh(temp_conv_output_r+ temp_conv_output_weighted_l+ b.dimshuffle('x', 0, 'x'))*mask_matrix_r.dimshuffle(0,'x',1)
+        self.attentive_sumpool_vec_r=T.max(self.conv_attend_out_r, axis=2)
+        mask_for_conv_output_r=T.repeat(mask_matrix_r.dimshuffle(0,'x',1), filter_shape[0], axis=1) #(batch_size, emb_size, maxSentLen-filter_size+1)
+        mask_for_conv_output_r=(1.0-mask_for_conv_output_r)*(mask_for_conv_output_r-10)
+        masked_conv_output_r=self.conv_attend_out_r+mask_for_conv_output_r      #mutiple mask with the conv_out to set the features by UNK to zero
+        self.attentive_maxpool_vec_r=T.max(masked_conv_output_r, axis=2) #(batch_size, hidden_size) # each sentence then have an embedding of length hidden_size
+        self.group_max_pools_r = T.signal.pool.pool_2d(input=self.conv_out_r, ds=(1,10), ignore_border=True) #(batch, hidden, 5)
+        self.all_att_maxpool_vecs_r = T.concatenate([self.attentive_maxpool_vec_r.dimshuffle(0,1,'x'), self.group_max_pools_r], axis=2) #(batch, hidden, 6)
+
+class Conv_for_Pair_SoftAttend(object):
+    """we define CNN by input tensor3 and output tensor3, like RNN, filter width must by 3,5,7..."""
+
+    def __init__(self, rng, origin_input_tensor3, origin_input_tensor3_r, input_tensor3, input_tensor3_r, mask_matrix, mask_matrix_r, 
+                 filter_shape, filter_shape_context,image_shape, image_shape_r,W, b, W_context, b_context,
+                 soft_att_W_big, soft_att_b_big,soft_att_W_small):
+        #construct interaction matrix
+        input_tensor3 = input_tensor3*mask_matrix.dimshuffle(0,'x',1)
+        input_tensor3_r = input_tensor3_r*mask_matrix_r.dimshuffle(0,'x',1) #(batch, hidden, r_len)
+#         dot_mask = T.batched_dot(mask_matrix.dimshuffle(0,1,'x'), mask_matrix_r.dimshuffle(0,'x',1)) #(batch, l_len, r_len)
+#         dot_tensor3 = T.batched_dot(input_tensor3.dimshuffle(0,2,1),input_tensor3_r) #(batch, l_len, r_len)
+# 
+#         self.cosine_tensor3 = dot_tensor3
+        # self.cosine_tensor3 = dot_tensor3/(1e-8+T.batched_dot(T.sqrt(1e-8+T.sum(input_tensor3**2, axis=1)).dimshuffle(0,1,'x'), T.sqrt(1e-8+T.sum(input_tensor3_r**2, axis=1)).dimshuffle(0,'x', 1)))
+#         self.l_max_cos = T.max(cosine_tensor3, axis=2) #(batch, l_len)
+#         self.r_max_cos = T.max(cosine_tensor3, axis=1) #(batch, r_len)
+#         sort_l= T.argsort(self.l_max_cos, axis=1)
+#         self.l_topK_min_max_cos = self.l_max_cos[T.repeat(T.arange(input_tensor3.shape[0]), 10, axis=0), sort_l[:,:10].flatten()].reshape((input_tensor3.shape[0],10))
+#         sort_r= T.argsort(self.r_max_cos, axis=1)
+#         self.r_topK_min_max_cos = self.r_max_cos[T.repeat(T.arange(input_tensor3.shape[0]), 10, axis=0), sort_r[:,:10].flatten()].reshape((input_tensor3.shape[0],10))
+        '''
+        soft interaction matrix
+        '''
+        Conc_T = T.concatenate([T.extra_ops.repeat(input_tensor3, input_tensor3_r.shape[2], axis=2), T.tile(input_tensor3_r, (1,1,input_tensor3.shape[2]))], axis=1) #(batch, 2hidden, l_len*r_len)
+        dot_tensor3 = T.tanh(Conc_T.dimshuffle(0,2,1).dot(soft_att_W_big)+soft_att_b_big.dimshuffle('x','x',0)).dot(soft_att_W_small).reshape((input_tensor3.shape[0], input_tensor3.shape[2], input_tensor3_r.shape[2]))#(batch, l_len, r_len)
+ 
 #         dot_mask=T.cast((1.0-dot_mask)*(dot_mask-100000), 'float32')#(batch, l_len, r_len)
 #         dot_tensor3 = dot_tensor3 + dot_mask
 
