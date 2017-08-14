@@ -18,22 +18,23 @@ from random import shuffle
 from sklearn.preprocessing import normalize
 
 from load_data import load_SNLI_dataset_with_extra, load_word2vec, load_word2vec_to_init, extend_word2vec_lowercase
-from common_functions import Conv_for_Pair,dropout_layer, elementwise_is_two,Conv_with_Mask_with_Gate, Conv_with_Mask, create_conv_para, L2norm_paraList, ABCNN, create_ensemble_para, cosine_matrix1_matrix2_rowwise, Diversify_Reg, Gradient_Cost_Para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
+from common_functions import Conv_for_Pair,dropout_layer, store_model_to_file, elementwise_is_two,Conv_with_Mask_with_Gate, Conv_with_Mask, create_conv_para, L2norm_paraList, ABCNN, create_ensemble_para, cosine_matrix1_matrix2_rowwise, Diversify_Reg, Gradient_Cost_Para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
 '''
 1, use SVM outside
+drop0.05, reach 0.86345177665
 '''
 
-def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0.0000001, extra_size=4, use_svm=False, drop_p=0.1, div_weight=0.00001, emb_size=300, batch_size=50, filter_size=[3,3], maxSentLen=40, hidden_size=[300,300], margin =0.1, comment='two copies from gate'):
+def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_size=4, use_svm=False, drop_p=0.05, div_weight=0.00001, emb_size=300, batch_size=50, filter_size=[3,3], maxSentLen=40, hidden_size=[300,300], margin =0.1, comment='two copies from gate, write para'):
 
     model_options = locals().copy()
     print "model options", model_options
 
-    seed=1234
+    seed=2345
     np.random.seed(seed)
     rng = np.random.RandomState(seed)    #random seed, control the model generates the same results
     srng = RandomStreams(rng.randint(999999))
 
-    second_seed=5678
+    second_seed=4321
     np.random.seed(second_seed)
     second_rng = np.random.RandomState(second_seed)    #random seed, control the model generates the same results
     second_srng = RandomStreams(second_rng.randint(888888))
@@ -116,7 +117,7 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
 
     second_conv_W_2_pre, second_conv_b_2_pre=create_conv_para(second_rng, filter_shape=gate_filter_shape)
     second_conv_W_2_gate, second_conv_b_2_gate=create_conv_para(second_rng, filter_shape=gate_filter_shape)
-    second_conv_W_2, second_conv_b_2=create_conv_para(second_rng, filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[0]))
+    second_conv_W_2, second_conv_b_2=create_conv_para(second_rng, filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[1]))
     second_conv_W_2_context, second_conv_b_2_context=create_conv_para(second_rng, filter_shape=(hidden_size[1], 1, hidden_size[0], 1))
 #     att_W = create_ensemble_para(rng, 1, 2*emb_size)
 #     conv_W_2_pre_to_matrix = conv_W_2_pre.reshape((conv_W_2_pre.shape[0], conv_W_2_pre.shape[2]*conv_W_2_pre.shape[3]))
@@ -203,7 +204,7 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
              mask_matrix_r = sents_mask_r,
              image_shape=(batch_size, 1, hidden_size[0], maxSentLen),
              image_shape_r = (batch_size, 1, hidden_size[0], maxSentLen),
-             filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[1]),
+             filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[0]),
              filter_shape_context=(hidden_size[1], 1,hidden_size[0], 1),
              W=drop_conv_W_2, b=conv_b_2,
              W_context=drop_conv_W_2_context, b_context=conv_b_2_context)
@@ -321,6 +322,8 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
     params_NN = NN_para   # put all model parameters together
     params_HL = HL_layer_1.params+HL_layer_2.params+second_HL_layer_1.params+second_HL_layer_2.params
     params_LR = LR_para+second_LR_para
+
+    params = params_emb+params_NN+params_HL+params_LR
 #     L2_reg =L2norm_paraList([embeddings,HL_layer_1.W, HL_layer_2.W])
 
 #     diversify_reg= (Diversify_Reg(conv_W_2_pre_to_matrix)+Diversify_Reg(conv_W_2_gate_to_matrix)+
@@ -339,12 +342,12 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
 #         updates.append((param_i, param_i - learning_rate * grad_i / (T.sqrt(acc)+1e-8)))   #1e-8 is add to get rid of zero division
 #         updates.append((acc_i, acc))
 
-    updates_emb = Gradient_Cost_Para(cost,params_emb,learning_rate[0])
-    updates_NN = Gradient_Cost_Para(cost,params_NN,learning_rate[1])
-    updates_HL = Gradient_Cost_Para(cost,params_HL,learning_rate[2])
-    updates_LR = Gradient_Cost_Para(cost,params_LR,learning_rate[3])
+#     updates_emb = Gradient_Cost_Para(cost,params_emb,learning_rate[0])
+#     updates_NN = Gradient_Cost_Para(cost,params_NN,learning_rate[1])
+#     updates_HL = Gradient_Cost_Para(cost,params_HL,learning_rate[2])
+#     updates_LR = Gradient_Cost_Para(cost,params_LR,learning_rate[3])
 
-    updates = updates_emb+updates_NN+updates_HL+updates_LR
+    updates =   Gradient_Cost_Para(cost,params, learning_rate)
 
     #train_model = theano.function([sents_id_matrix, sents_mask, labels], cost, updates=updates, on_unused_input='ignore')
     train_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, train_flag, extra, labels], cost, updates=updates, allow_input_downcast=True, on_unused_input='ignore')
@@ -457,40 +460,7 @@ def evaluate_lenet5(learning_rate=[0.02,0.02,0.02,0.02], n_epochs=4, L2_weight=0
                     max_acc_test=test_accuracy_j
                 if test_accuracy_both > max_acc_test:
                     max_acc_test=test_accuracy_both
-                    '''
-                    svm
-                    '''
-                    if use_svm and epoch>1:
-                        write_test=open('/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/svm_test.txt', 'w')
-                        feature_size = len(test_features[0])
-                        feature_ids = range(1, feature_size+1)
-                        for i in range(len(test_y)):
-                            write_test.write(str(test_y[i])+' ')
-                            instance = [str(id)+':'+str(v) for id, v in zip(feature_ids, test_features[i])]
-                            write_test.write(' '.join(instance)+'\n')
-                        write_test.close()
-                        print 'test features written over'
-                        train_y=[]
-                        train_features=[]
-                        for train_batch_id in train_batch_start: # for each test batch
-                            train_input_batch, train_y_batch=train_model_pred(
-                                    train_sents_l[train_batch_id:train_batch_id+batch_size],
-                                    train_masks_l[train_batch_id:train_batch_id+batch_size],
-                                    train_sents_r[train_batch_id:train_batch_id+batch_size],
-                                    train_masks_r[train_batch_id:train_batch_id+batch_size],
-                                    0,
-                                    train_extra[train_batch_id:train_batch_id+batch_size],
-                                    train_labels_store[train_batch_id:train_batch_id+batch_size])
-
-                            train_y+=train_y_batch.tolist()
-                            train_features+=train_input_batch.tolist()
-                        write_train=open('/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/svm_train.txt', 'w')
-                        for i in range(len(train_y)):
-                            write_train.write(str(train_y[i])+' ')
-                            instance = [str(id)+':'+str(v) for id, v in zip(feature_ids, train_features[i])]
-                            write_train.write(' '.join(instance)+'\n')
-                        write_train.close()
-                        print 'train features written over'
+                    store_model_to_file('/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/model_para_'+str(max_acc_test), params)
                 print '\t\tcurrent testbacc:', test_accuracy,test_accuracy_j,test_accuracy_both, '\t\t\t\t\tmax_acc_test:', max_acc_test
 #                 else:
 #                     print 'current dev_accuracy:', dev_accuracy, '\t\t\t\t\tmax max_acc_dev:', max_acc_dev

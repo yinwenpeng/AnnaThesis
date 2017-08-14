@@ -1713,12 +1713,13 @@ def load_model_from_file(file_path, params):
 
     for para in params:
         para.set_value(cPickle.load(save_file), borrow=True)
-    print 'model loaded successfully'
+    print 'model loaded successfully:', file_path
     save_file.close()
 def store_model_to_file(file_path, best_params):
     save_file = open(file_path, 'wb')  # this will overwrite current contents
     for para in best_params:
         cPickle.dump(para.get_value(borrow=True), save_file, -1)  # the -1 is for HIGHEST_PROTOCOL
+    print 'para stored over...'
     save_file.close()
 
 def add_HLs_2_Matrix(matrix, HL_1_para,HL_2_para,HL_3_para,HL_4_para):
