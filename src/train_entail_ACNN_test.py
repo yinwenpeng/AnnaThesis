@@ -302,7 +302,7 @@ def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_s
     params_NN = NN_para   # put all model parameters together
     params_HL = HL_layer_1.params+HL_layer_2.params+second_HL_layer_1.params+second_HL_layer_2.params
     params_LR = LR_para+second_LR_para
-    
+
     params = params_emb+params_NN+params_HL+params_LR
     load_model_from_file(para_filename, params)
 #     L2_reg =L2norm_paraList([embeddings,HL_layer_1.W, HL_layer_2.W])
@@ -329,11 +329,11 @@ def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_s
 #     updates_LR = Gradient_Cost_Para(cost,params_LR,learning_rate[3])
 
 #     updates =   Gradient_Cost_Para(cost,params, learning_rate)
-# 
+#
 #     #train_model = theano.function([sents_id_matrix, sents_mask, labels], cost, updates=updates, on_unused_input='ignore')
 #     train_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, train_flag, extra, labels], cost, updates=updates, allow_input_downcast=True, on_unused_input='ignore')
 #     train_model_pred = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, train_flag,extra,labels], [LR_input, labels], allow_input_downcast=True, on_unused_input='ignore')
-# 
+#
 #     dev_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, train_flag,extra, labels], layer_LR.errors(labels), allow_input_downcast=True, on_unused_input='ignore')
     test_model = theano.function([sents_ids_l, sents_mask_l, sents_ids_r, sents_mask_r, train_flag,extra, labels], all_prop_distr, allow_input_downcast=True, on_unused_input='ignore')
 
@@ -384,9 +384,65 @@ def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_s
 
 
 if __name__ == '__main__':
+    '''
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 12:16 model_para_0.853705583756
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 10:06 model_para_0.853908629442
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 12:21 model_para_0.854822335025
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 20:49 model_para_0.855634517766
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 20:54 model_para_0.855736040609
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 10:05 model_para_0.855939086294
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 11:31 model_para_0.856040609137
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 11:26 model_para_0.856243654822
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 10:16 model_para_0.856345177665
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 10:10 model_para_0.85654822335
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 20:57 model_para_0.857157360406
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 21:03 model_para_0.857766497462
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 12:32 model_para_0.857969543147
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 10:15 model_para_0.858172588832
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 12:37 model_para_0.858274111675
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 11:31 model_para_0.858375634518
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 12:43 model_para_0.858781725888
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 12:37 model_para_0.858984771574
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 13:12 model_para_0.859187817259
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 12:58 model_para_0.859390862944
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 10:22 model_para_0.860101522843
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 21:13 model_para_0.860203045685
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 21:35 model_para_0.860304568528
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 13:09 model_para_0.860609137056
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 21:10 model_para_0.860710659898
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 11:36 model_para_0.860812182741
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 10:21 model_para_0.861116751269
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 21:37 model_para_0.861421319797
+    -rw-r--r-- 1 wenpeng cisintern    48525690 Aug 13 21:42 model_para_0.86345177665
+    '''
     root='/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/'
-    para_filenames=['model_para_0.861116751269','model_para_0.860101522843', 'model_para_0.858172588832','model_para_0.85654822335','model_para_0.856345177665',
-                    'model_para_0.858375634518','model_para_0.860812182741']
+    # para_filenames=['model_para_0.861116751269','model_para_0.860812182741','model_para_0.860101522843', 'model_para_0.858375634518',
+    #                 'model_para_0.858172588832','model_para_0.85654822335','model_para_0.856345177665',#0.865583756345
+    #                 # 'model_para_0.860609137056',
+    #                 # 'model_para_0.859390862944',
+    #                 # 'model_para_0.859187817259',
+    #                 'model_para_0.858984771574',#0.865685279188
+    #                 'model_para_0.858781725888',#0.866091370558
+    #                 # 'model_para_0.858274111675',
+    #                 # 'model_para_0.857969543147',
+    #                 # 'model_para_0.857766497462',
+    #                 # 'model_para_0.856243654822',
+    #                 'model_para_0.86345177665',#0.866497461929
+    #                 # 'model_para_0.861421319797',
+    #                 ]
+    para_filenames=['model_para_0.86345177665','model_para_0.861421319797','model_para_0.861116751269','model_para_0.860812182741',
+                    # 'model_para_0.860710659898',
+                    'model_para_0.860609137056',#0.867512690355
+                    'model_para_0.860304568528',#0.868223350254
+                    # 'model_para_0.860203045685',
+                    # 'model_para_0.860101522843',
+                    'model_para_0.859390862944',#0.868324873096
+                    # 'model_para_0.859187817259',
+                    'model_para_0.858984771574',#0.868527918782
+                    # 'model_para_0.858781725888',
+                    # 'model_para_0.859593908629',
+                    # 'model_para_0.858375634518',
+                    ]
     ensemble_distr=0.0
     gold_ys = 0
     majority_preds=[]
@@ -406,7 +462,7 @@ if __name__ == '__main__':
     majority_preds = np.asarray(majority_preds, dtype='int32')
     majority_ys= mode(np.transpose(majority_preds), axis=-1)[0][:,0]
     pred_ys = np.argmax(ensemble_distr, axis=1)
-    
+
     majority_acc =1.0-np.not_equal(gold_ys, majority_ys).sum()*1.0/len(gold_ys)
     acc=1.0-np.not_equal(gold_ys, pred_ys).sum()*1.0/len(gold_ys)
 
