@@ -1809,7 +1809,7 @@ def BatchMatchMatrix_between_2tensors(tensor1, tensor2):
     return batch_matrix #(batch, para_len, q_len)
 
 def load_model_from_file(file_path, params):
-    #save_file = open('/mounts/data/proj/wenpeng/Dataset/WikiQACorpus/Best_Conv_Para')
+#     print 'loading model: ', file_path
     save_file = open(file_path)
 #     save_file = open('/mounts/data/proj/wenpeng/Dataset/WikiQACorpus/Best_Conv_Para_at_22')
 
