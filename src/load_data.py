@@ -294,6 +294,9 @@ def load_SNLI_dataset_with_extra(maxlen=40):
 
                 sent_idlist_l, sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_l, word2id, maxlen)
                 sent_idlist_r, sent_masklist_r=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_r, word2id, maxlen)
+                
+                half_sentence_wordlist_l = sentence_wordlist_l[:(len(sentence_wordlist_l)/2)]
+                half_sent_idlist_l, half_sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(half_sentence_wordlist_l, word2id, maxlen)
 
 #                 sub_sent_idlist_l, sub_sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(sub_sentence_wordlist_l, word2id, maxlen)
                 extra_instance = extra_two_wordlist_SNLI(sentence_wordlist_l, sentence_wordlist_r)
@@ -306,18 +309,24 @@ def load_SNLI_dataset_with_extra(maxlen=40):
                 labels.append(label)
 
 #                 if i==0:#train file
-#                     if label == 1 or label ==0:
+#                     if label == 1: #contr
 #                         sents_l.append(sent_idlist_r)
 #                         sents_masks_l.append(sent_masklist_r)
 #                         sents_r.append(sent_idlist_l)
 #                         sents_masks_r.append(sent_masklist_l)
-#                         labels.append(label)
-#                     else:
-#                         sents_l.append(sent_idlist_l)
-#                         sents_masks_l.append(sent_masklist_l)
-#                         sents_r.append(sub_sent_idlist_l)
-#                         sents_masks_r.append(sub_sent_masklist_l)
-#                         labels.append(label)
+#                         labels.append(label) #contral
+#                     elif label==2: # entail
+#                         sents_l.append(sent_idlist_r)
+#                         sents_masks_l.append(sent_masklist_r)
+#                         sents_r.append(sent_idlist_l)
+#                         sents_masks_r.append(sent_masklist_l)
+#                         labels.append(0) #neutral
+                        #aug entail
+#                         sents_l.append(half_sent_idlist_l)
+#                         sents_masks_l.append(half_sent_masklist_l)
+#                         sents_r.append(sent_idlist_l)
+#                         sents_masks_r.append(sent_masklist_l)
+#                         labels.append(0)#neutral
 
 
 
