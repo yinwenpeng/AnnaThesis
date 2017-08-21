@@ -248,6 +248,103 @@ def extra_two_wordlist_SNLI(wordlist1, wordlist2):
 #     print [feature_1,feature_2, feature_3]
 #     exit(0)
     return [feature_1,feature_2, feature_3, feature_4]#, 1.0/(len(wordlist1)+1.0),1.0/(len(wordlist2)+1.0)]
+
+def load_SNLI_dataset_with_extra_with_test(maxlen=40):
+    root="/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/"
+#     files=['train.norm.to.word2vec.vocab.txt', 'dev.norm.to.word2vec.vocab.txt', 'test.norm.to.word2vec.vocab.txt']
+    files=['train.txt', 'dev.txt', 'test.txt']
+#     files=['train_removed_overlap.txt', 'dev_removed_overlap.txt', 'test_removed_overlap.txt']
+    word2id={}  # store vocabulary, each word map to a id
+    all_sentences_l=[]
+    all_masks_l=[]
+    all_sentences_r=[]
+    all_masks_r=[]
+    all_labels=[]
+    all_extra=[]
+    test_rows = []
+    max_sen_len=0
+    for i in range(len(files)):
+        print 'loading file:', root+files[i], '...'
+
+        sents_l=[]
+        sents_masks_l=[]
+        sents_r=[]
+        sents_masks_r=[]
+        extra=[]
+        labels=[]
+        readfile=open(root+files[i], 'r')
+        for line in readfile:
+            if i == 2: #test file
+                test_rows.append(line.strip())
+            parts=line.strip().lower().split('\t') #lowercase all tokens, as we guess this is not important for sentiment task
+            if len(parts)==3:
+
+                label=int(parts[0])  # keep label be 0 or 1
+                sentence_wordlist_l=parts[1].strip().lower().split()
+                if sentence_wordlist_l[-1]=='.':
+                    sentence_wordlist_l=sentence_wordlist_l[:-1]
+
+#                 sub_sentence_wordlist_l=sentence_wordlist_l[:(len(sentence_wordlist_l)/2)] # only a half length
+
+                sentence_wordlist_r=parts[2].strip().lower().split()
+                if sentence_wordlist_r[-1]=='.':
+                    sentence_wordlist_r=sentence_wordlist_r[:-1]
+                l_len=len(sentence_wordlist_l)
+                r_len = len(sentence_wordlist_r)
+                if l_len > max_sen_len:
+                    max_sen_len=l_len
+                if r_len > max_sen_len:
+                    max_sen_len=r_len
+
+                sent_idlist_l, sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_l, word2id, maxlen)
+                sent_idlist_r, sent_masklist_r=transfer_wordlist_2_idlist_with_maxlen(sentence_wordlist_r, word2id, maxlen)
+                
+                half_sentence_wordlist_l = sentence_wordlist_l[:(len(sentence_wordlist_l)/2)]
+                half_sent_idlist_l, half_sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(half_sentence_wordlist_l, word2id, maxlen)
+
+#                 sub_sent_idlist_l, sub_sent_masklist_l=transfer_wordlist_2_idlist_with_maxlen(sub_sentence_wordlist_l, word2id, maxlen)
+                extra_instance = extra_two_wordlist_SNLI(sentence_wordlist_l, sentence_wordlist_r)
+
+                sents_l.append(sent_idlist_l)
+                sents_masks_l.append(sent_masklist_l)
+                sents_r.append(sent_idlist_r)
+                sents_masks_r.append(sent_masklist_r)
+                extra.append(extra_instance)
+                labels.append(label)
+
+#                 if i==0:#train file
+#                     if label == 1: #contr
+#                         sents_l.append(sent_idlist_r)
+#                         sents_masks_l.append(sent_masklist_r)
+#                         sents_r.append(sent_idlist_l)
+#                         sents_masks_r.append(sent_masklist_l)
+#                         labels.append(label) #contral
+#                     elif label==2: # entail
+#                         sents_l.append(sent_idlist_r)
+#                         sents_masks_l.append(sent_masklist_r)
+#                         sents_r.append(sent_idlist_l)
+#                         sents_masks_r.append(sent_masklist_l)
+#                         labels.append(0) #neutral
+                        #aug entail
+#                         sents_l.append(half_sent_idlist_l)
+#                         sents_masks_l.append(half_sent_masklist_l)
+#                         sents_r.append(sent_idlist_l)
+#                         sents_masks_r.append(sent_masklist_l)
+#                         labels.append(0)#neutral
+
+
+
+        all_sentences_l.append(sents_l)
+        all_sentences_r.append(sents_r)
+        all_masks_l.append(sents_masks_l)
+        all_masks_r.append(sents_masks_r)
+        all_extra.append(extra)
+        all_labels.append(labels)
+        print '\t\t\t size:', len(labels), 'pairs'
+    print 'dataset loaded over, totally ', len(word2id), 'words, max sen len:',   max_sen_len
+    return all_sentences_l, all_masks_l, all_sentences_r, all_masks_r,all_extra, all_labels, word2id,test_rows
+
+
 def load_SNLI_dataset_with_extra(maxlen=40):
     root="/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/"
 #     files=['train.norm.to.word2vec.vocab.txt', 'dev.norm.to.word2vec.vocab.txt', 'test.norm.to.word2vec.vocab.txt']

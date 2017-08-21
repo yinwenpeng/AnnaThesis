@@ -190,7 +190,7 @@ def Conv_for_Self_Attend(input_tensor3, mask_matrix):
 #         self.concat_output_tensor3 = T.concatenate([input_tensor3, weighted_sum_r], axis=1) #(batch, 2*hidden, len)
         sum_output_tensor3 = input_tensor3+weighted_sum_r
         return sum_output_tensor3
-    
+
 def tensor3_group_maxpool(tensor3, valid_left_vec, group_size):
     #tensor3 (batch, hidden, len)
     #valid_left_vec #batch
@@ -207,16 +207,28 @@ def tensor3_group_maxpool(tensor3, valid_left_vec, group_size):
             pool_vec_2 = (T.max(matrix[:,left+group_width:left+2*group_width], axis=1)).dimshuffle(0,'x')
             pool_vec_3 = (T.max(matrix[:,left+2*group_width:], axis=1)).dimshuffle(0,'x')
         return T.concatenate([pool_vec_1,pool_vec_2,pool_vec_3], axis=1) #(hidden, 3)
-    
+
     batch_return, _ = theano.scan(
         each_slice,
         sequences=[tensor3,valid_left_vec])  #(batch,hidden, 3)
     return batch_return
 
+def fine_grained_softmax_tensor3(tensor3, left_vec):
+
+    def process_matrix(matrix, left):
+        submatrix = matrix[:,left:]
+        sub_distr = T.nnet.softmax(submatrix)
+        return T.concatenate([matrix[:,:left], sub_distr], axis=1)
+    batch_return, _ = theano.scan(
+        process_matrix,
+        sequences=[tensor3,left_vec])  #(batch,hidden, len)
+
+    return     batch_return
+
 class Conv_for_Pair(object):
     """we define CNN by input tensor3 and output tensor3, like RNN, filter width must by 3,5,7..."""
 
-    def __init__(self, rng, origin_input_tensor3, origin_input_tensor3_r, input_tensor3, input_tensor3_r, input_char_tensor3, input_char_tensor3_r,mask_matrix, mask_matrix_r,
+    def __init__(self, rng, origin_input_tensor3, origin_input_tensor3_r, input_tensor3, input_tensor3_r, mask_matrix, mask_matrix_r,
                  filter_shape, filter_shape_context,image_shape, image_shape_r,W, b, W_context, b_context):
         batch_size = origin_input_tensor3.shape[0]
         hidden_size = origin_input_tensor3.shape[1]
@@ -225,10 +237,7 @@ class Conv_for_Pair(object):
         #construct interaction matrix
         input_tensor3 = input_tensor3*mask_matrix.dimshuffle(0,'x',1)
         input_tensor3_r = input_tensor3_r*mask_matrix_r.dimshuffle(0,'x',1) #(batch, hidden, r_len)
-        
-        input_wordAndchar_tensor3 = T.concatenate([input_tensor3,input_char_tensor3], axis=1)*mask_matrix.dimshuffle(0,'x',1)
-        input_wordAndchar_tensor3_r = T.concatenate([input_tensor3_r,input_char_tensor3_r], axis=1)*mask_matrix_r.dimshuffle(0,'x',1) #(batch, hidden, r_len)
-        dot_tensor3 = T.batched_dot(input_wordAndchar_tensor3.dimshuffle(0,2,1),input_wordAndchar_tensor3_r) #(batch, l_len, r_len)
+        dot_tensor3 = T.batched_dot(input_tensor3.dimshuffle(0,2,1),input_tensor3_r) #(batch, l_len, r_len)
 
 #         self.cosine_tensor3 = dot_tensor3
         # self.cosine_tensor3 = dot_tensor3/(1e-8+T.batched_dot(T.sqrt(1e-8+T.sum(input_tensor3**2, axis=1)).dimshuffle(0,1,'x'), T.sqrt(1e-8+T.sum(input_tensor3_r**2, axis=1)).dimshuffle(0,'x', 1)))
@@ -270,6 +279,8 @@ class Conv_for_Pair(object):
 #         argsort_right = T.argsort(dot_matrix_for_right, axis=1)
 #         diff_right = T.abs_(T.extra_ops.repeat(T.arange(r_len).dimshuffle('x',0), batch_size*l_len, axis=0)- argsort_right[:,-1].dimshuffle(0,'x'))#(batch*l_len, r_len)
 #         distance_biases_tensor3_right = T.cast((1.0/(5.0+T.minimum(diff_right, 10))).reshape((batch_size, l_len, r_len)), 'float32')
+        # left_boundaries_r = T.cast(mask_matrix_r.shape[1]-T.sum(mask_matrix_r, axis=1), 'int32')
+        # dot_tensor3_for_right = fine_grained_softmax_tensor3(dot_tensor3,left_boundaries_r)
         weighted_sum_r = T.batched_dot(dot_tensor3_for_right, input_tensor3_r.dimshuffle(0,2,1)).dimshuffle(0,2,1)*mask_matrix.dimshuffle(0,'x',1) #(batch,hidden, l_len)
 
         dot_matrix_for_left = T.nnet.softmax(dot_tensor3.dimshuffle(0,2,1).reshape((dot_tensor3.shape[0]*dot_tensor3.shape[2], dot_tensor3.shape[1]))) #(batch*r_len, l_len)
@@ -277,6 +288,9 @@ class Conv_for_Pair(object):
 #         argsort_left = T.argsort(dot_matrix_for_left, axis=1)#(batch*r_len, l_len)
 #         diff_left = T.abs_(T.extra_ops.repeat(T.arange(l_len).dimshuffle('x',0), batch_size*r_len, axis=0)- argsort_left[:,-1].dimshuffle(0,'x'))#(batch*r_len, l_len)
 #         distance_biases_tensor3_left = T.cast((1.0/(5.0+T.minimum(diff_left, 10))).reshape((batch_size, r_len, l_len)), 'float32')
+        # left_boundaries_l = T.cast(mask_matrix.shape[1]-T.sum(mask_matrix, axis=1), 'int32')
+        # dot_tensor3_for_left = fine_grained_softmax_tensor3(dot_tensor3.dimshuffle(0,2,1),left_boundaries_l)
+
         weighted_sum_l = T.batched_dot(dot_tensor3_for_left, input_tensor3.dimshuffle(0,2,1)).dimshuffle(0,2,1)*mask_matrix_r.dimshuffle(0,'x',1) #(batch,hidden, r_len)
 
         #convolve left, weighted sum r
