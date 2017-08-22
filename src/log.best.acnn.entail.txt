@@ -1,10 +1,16 @@
-model options {'comment': 'two copies from gate', 'drop_p': 0.1, 'use_svm': False, 'extra_size': 4, 'learning_rate': [0.02, 0.02, 0.02, 0.02], 'batch_size': 50, 'n_epochs': 4, 'emb_size': 300, 'filter_size': [3, 3], 'maxSentLen': 40, 'div_weight': 1e-05, 'L2_weight': 1e-07, 'hidden_size': [300, 300], 'margin': 0.1}
+wenpeng@tau:~/workspace/AnnaThesis/src$ THEANO_FLAGS=mode=FAST_RUN,device=gpu3,floatX=float32 /opt/anaconda2/bin/python -u train_entail_ACNN_singlemodel.py 
+Using gpu device 3: GeForce GTX 1080 (CNMeM is disabled, cuDNN 5110)
+/opt/anaconda2/lib/python2.7/site-packages/theano/sandbox/cuda/__init__.py:600: UserWarning: Your cuDNN version is more recent than the one Theano officially supports. If you see any problems, try updating Theano or downgrading cuDNN to version 5.
+  warnings.warn(warn)
+/opt/anaconda2/lib/python2.7/site-packages/theano/tensor/signal/downsample.py:6: UserWarning: downsample module has been moved to the theano.tensor.signal.pool module.
+  "downsample module has been moved to the theano.tensor.signal.pool module.")
+model options {'comment': 'four copies, write error analysis, mean loss', 'drop_p': 0.1, 'use_svm': False, 'extra_size': 4, 'learning_rate': 0.02, 'batch_size': 50, 'n_epochs': 4, 'emb_size': 300, 'filter_size': [3, 3], 'maxSentLen': 40, 'div_weight': 1e-05, 'L2_weight': 1e-07, 'hidden_size': [300, 300], 'margin': 0.1, 'multi_psp_size': 3}
 loading file: /mounts/data/proj/wenpeng/Dataset/StanfordEntailment/train.txt ...
-			 size: 549367 pairs
+                         size: 549367 pairs
 loading file: /mounts/data/proj/wenpeng/Dataset/StanfordEntailment/dev.txt ...
-			 size: 9842 pairs
+                         size: 9842 pairs
 loading file: /mounts/data/proj/wenpeng/Dataset/StanfordEntailment/test.txt ...
-			 size: 9824 pairs
+                         size: 9824 pairs
 dataset loaded over, totally  34394 words, max sen len: 81
 train size:  549367  dev size:  9842  test size:  9824
 ==> loading 300d word2vec
@@ -12,49 +18,62 @@ train size:  549367  dev size:  9842  test size:  9824
 ==> use word2vec initialization over...fail  6982
 ... building the model
 ... training
-Epoch  1 iter 2000 average cost: 1.30330236837 uses  5.07098758221 min
-		current testbacc: 0.803350253807 0.802030456853 0.806395939086 					max_acc_test: 0.806395939086
-Epoch  1 iter 4000 average cost: 1.16736335786 uses  5.27813670238 min
-		current testbacc: 0.820710659898 0.821218274112 0.823654822335 					max_acc_test: 0.823654822335
-Epoch  1 iter 6000 average cost: 1.0970648949 uses  5.2156518658 min
-		current testbacc: 0.835431472081 0.837461928934 0.838883248731 					max_acc_test: 0.838883248731
-Epoch  1 iter 8000 average cost: 1.05212507435 uses  5.26476471821 min
-		current testbacc: 0.840304568528 0.84192893401 0.844365482234 					max_acc_test: 0.844365482234
-Epoch  1 iter 10000 average cost: 1.01799910367 uses  5.23195593357 min
-		current testbacc: 0.849137055838 0.847005076142 0.85076142132 					max_acc_test: 0.85076142132
-Epoch  1 uses  28.7054455837 min
-Epoch  2 iter 12000 average cost: 0.979825931003 uses  5.21490796804 min
-		current testbacc: 0.850152284264 0.849543147208 0.851675126904 					max_acc_test: 0.851675126904
-Epoch  2 iter 14000 average cost: 0.940702416705 uses  5.29322793484 min
-		current testbacc: 0.851269035533 0.849847715736 0.855025380711 					max_acc_test: 0.855025380711
-Epoch  2 iter 16000 average cost: 0.910795633906 uses  5.31605416536 min
-		current testbacc: 0.851269035533 0.851370558376 0.855329949239 					max_acc_test: 0.855329949239
-Epoch  2 iter 18000 average cost: 0.88858651252 uses  5.28470384677 min
-		current testbacc: 0.855532994924 0.853401015228 0.857563451777 					max_acc_test: 0.857563451777
-Epoch  2 iter 20000 average cost: 0.871067046513 uses  5.26813161771 min
-		current testbacc: 0.85654822335 0.855837563452 0.858578680203 					max_acc_test: 0.858578680203
-Epoch  2 uses  28.9219037334 min
-Epoch  3 iter 22000 average cost: 0.855088578572 uses  5.25631664991 min
-		current testbacc: 0.856446700508 0.857055837563 0.859695431472 					max_acc_test: 0.859695431472
-Epoch  3 iter 24000 average cost: 0.830752557564 uses  5.26037898461 min
-		current testbacc: 0.853096446701 0.852487309645 0.85654822335 					max_acc_test: 0.859695431472
-Epoch  3 iter 26000 average cost: 0.810219922748 uses  5.33002533515 min
-		current testbacc: 0.85269035533 0.854010152284 0.855939086294 					max_acc_test: 0.859695431472
-Epoch  3 iter 28000 average cost: 0.793613539313 uses  5.32241516511 min
-		current testbacc: 0.854822335025 0.857258883249 0.859492385787 					max_acc_test: 0.859695431472
-Epoch  3 iter 30000 average cost: 0.779414280377 uses  5.25482165019 min
-		current testbacc: 0.855025380711 0.854010152284 0.855025380711 					max_acc_test: 0.859695431472
-Epoch  3 iter 32000 average cost: 0.767642937968 uses  5.2957307299 min
-		current testbacc: 0.855329949239 0.855939086294 0.856649746193 					max_acc_test: 0.859695431472
-Epoch  3 uses  29.1758615812 min
-Epoch  4 iter 34000 average cost: 0.753533522387 uses  5.33193893035 min
-		current testbacc: 0.855228426396 0.856345177665 0.860406091371 					max_acc_test: 0.860406091371
-Epoch  4 iter 36000 average cost: 0.73779144594 uses  5.33674289783 min
-		current testbacc: 0.849847715736 0.856345177665 0.85654822335 					max_acc_test: 0.860406091371
-Epoch  4 iter 38000 average cost: 0.724428670418 uses  5.32976040045 min
-		current testbacc: 0.851776649746 0.855939086294 0.858375634518 					max_acc_test: 0.860406091371
-Epoch  4 iter 40000 average cost: 0.712406321778 uses  5.30789628029 min
-		current testbacc: 0.849949238579 0.851269035533 0.853908629442 					max_acc_test: 0.860406091371
-Epoch  4 iter 42000 average cost: 0.701780669108 uses  5.29892526865 min
-		current testbacc: 0.851370558376 0.857360406091 0.858578680203 					max_acc_test: 0.860406091371
-Epoch  4 uses  28.5572568854 min
+Epoch  1 iter 2000 average cost: 0.641360211387 uses  20.3205646157 min
+error analysis file written over.
+                current acc: 0.811370558376                                     max_acc: 0.811370558376
+Epoch  1 iter 4000 average cost: 0.581341838628 uses  23.1934297641 min
+error analysis file written over.
+                current acc: 0.82883248731                                      max_acc: 0.82883248731
+Epoch  1 iter 6000 average cost: 0.550288165795 uses  19.6690581679 min
+error analysis file written over.
+                current acc: 0.839898477157                                     max_acc: 0.839898477157
+Epoch  1 iter 8000 average cost: 0.529677924447 uses  19.6328301152 min
+error analysis file written over.
+                current acc: 0.846497461929                                     max_acc: 0.846497461929
+Epoch  1 iter 10000 average cost: 0.514093709946 uses  19.1621573846 min
+error analysis file written over.
+                current acc: 0.85269035533                                      max_acc: 0.85269035533
+Epoch  1 uses  111.260897966 min
+Epoch  2 iter 12000 average cost: 0.496974372617 uses  17.0075320164 min
+error analysis file written over.
+                current acc: 0.854416243655                                     max_acc: 0.854416243655
+Epoch  2 iter 14000 average cost: 0.479588234478 uses  13.8992652694 min
+error analysis file written over.
+                current acc: 0.856040609137                                     max_acc: 0.856040609137
+Epoch  2 iter 16000 average cost: 0.466371310696 uses  13.5440042019 min
+                current acc: 0.85461928934                                      max_acc: 0.856040609137
+Epoch  2 iter 18000 average cost: 0.456499074638 uses  14.0656026483 min
+error analysis file written over.
+                current acc: 0.860507614213                                     max_acc: 0.860507614213
+Epoch  2 iter 20000 average cost: 0.448579449152 uses  14.3710417668 min
+error analysis file written over.
+                current acc: 0.861218274112                                     max_acc: 0.861218274112
+Epoch  2 uses  78.8817016164 min
+Epoch  3 iter 22000 average cost: 0.441265305561 uses  15.4939095338 min
+error analysis file written over.
+                current acc: 0.861421319797                                     max_acc: 0.861421319797
+Epoch  3 iter 24000 average cost: 0.430933776567 uses  16.5101402322 min
+                current acc: 0.858172588832                                     max_acc: 0.861421319797
+Epoch  3 iter 26000 average cost: 0.422212882373 uses  15.8794735988 min
+                current acc: 0.860101522843                                     max_acc: 0.861421319797
+Epoch  3 iter 28000 average cost: 0.415145005586 uses  15.0710474332 min
+error analysis file written over.
+                current acc: 0.86345177665                                      max_acc: 0.86345177665
+Epoch  3 iter 30000 average cost: 0.409003127553 uses  13.7589308659 min
+                current acc: 0.862639593909                                     max_acc: 0.86345177665
+Epoch  3 iter 32000 average cost: 0.403926401929 uses  13.5342221657 min
+error analysis file written over.
+                current acc: 0.866497461929                                     max_acc: 0.866497461929
+Epoch  3 uses  81.8627203306 min
+Epoch  4 iter 34000 average cost: 0.398036294015 uses  13.6691246351 min
+error analysis file written over.
+                current acc: 0.866598984772                                     max_acc: 0.866598984772
+Epoch  4 iter 36000 average cost: 0.391639364353 uses  13.9825965842 min
+                current acc: 0.864670050761                                     max_acc: 0.866598984772
+Epoch  4 iter 38000 average cost: 0.386088227779 uses  15.1750352025 min
+                current acc: 0.865177664975                                     max_acc: 0.866598984772
+Epoch  4 iter 40000 average cost: 0.381104759282 uses  14.1745944142 min
+                current acc: 0.858578680203                                     max_acc: 0.866598984772
+Epoch  4 iter 42000 average cost: 0.376636774984 uses  14.2795867999 min
+                current acc: 0.864365482234                                     max_acc: 0.866598984772
+Epoch  4 uses  78.3118332187 min
