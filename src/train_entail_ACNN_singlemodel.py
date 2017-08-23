@@ -19,7 +19,7 @@ from sklearn.preprocessing import normalize
 from scipy.stats import mode
 
 from load_data import load_SNLI_dataset_with_extra, load_word2vec, load_word2vec_to_init, extend_word2vec_lowercase,load_SNLI_dataset_with_extra_with_test
-from common_functions import Conv_for_Pair_Multi_Perspective,create_HiddenLayer_para,dropit,create_ensemble_para_with_bounds, Conv_for_Pair,dropout_layer, store_model_to_file, elementwise_is_two,Conv_with_Mask_with_Gate, Conv_with_Mask, create_conv_para, L2norm_paraList, ABCNN, create_ensemble_para, cosine_matrix1_matrix2_rowwise, Diversify_Reg, Gradient_Cost_Para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
+from common_functions import one_classifier_in_one_copy,create_HiddenLayer_para,dropit,create_ensemble_para_with_bounds, Conv_for_Pair,dropout_layer, store_model_to_file, elementwise_is_two,Conv_with_Mask_with_Gate, Conv_with_Mask, create_conv_para, L2norm_paraList, ABCNN, create_ensemble_para, cosine_matrix1_matrix2_rowwise, Diversify_Reg, Gradient_Cost_Para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
 '''
 1, use SVM outside
 drop0.05, reach 0.86345177665
@@ -28,16 +28,15 @@ drop0.05, reach 0.86345177665
 4, check output labels, if three group has the same predictions, use another score to refine them
 '''
 
-def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_size=4, use_svm=False, drop_p=0.1, div_weight=0.00001, emb_size=300,
-                    batch_size=50, filter_size=[3,3], maxSentLen=40, hidden_size=[300,300], multi_psp_size=3, margin =0.1, comment='four copies, write error analysis, mean loss'):
+def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_size=4, use_svm=False, drop_p=0.0, div_weight=0.00001, emb_size=300, phrase_hidden_size=50,
+                    batch_size=50, filter_size=[3,3], maxSentLen=40, hidden_size=[300,300], multi_psp_size=3, margin =0.1, comment='with 50d phrase'):
 
     model_options = locals().copy()
     print "model options", model_options
 
-    first_seed=1234
-    np.random.seed(first_seed)
-    first_rng = np.random.RandomState(first_seed)    #random seed, control the model generates the same results
-    first_srng = RandomStreams(first_rng.randint(999999))
+    first_seeds=[1234,1235,1236,1237] #first copy starts by 1
+    first_rngs = [np.random.RandomState(first_seeds[0]),np.random.RandomState(first_seeds[1]),np.random.RandomState(first_seeds[2]),np.random.RandomState(first_seeds[3])]    #random seed, control the model generates the same results
+    first_srng = RandomStreams(first_rngs[0].randint(999999))
 
 
     all_sentences_l, all_masks_l, all_sentences_r, all_masks_r, all_extra, all_labels, word2id, test_rows  =load_SNLI_dataset_with_extra_with_test(maxlen=maxSentLen)  #minlen, include one label, at least one word in the sentence
@@ -78,14 +77,13 @@ def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_s
     vocab_size=len(word2id)+1
 
 
-    rand_values=first_rng.normal(0.0, 0.01, (vocab_size, emb_size))   #generate a matrix by Gaussian distribution
+    rand_values=first_rngs[0].normal(0.0, 0.01, (vocab_size, emb_size))   #generate a matrix by Gaussian distribution
     #here, we leave code for loading word2vec to initialize words
     rand_values[0]=np.array(np.zeros(emb_size),dtype=theano.config.floatX)
     id2word = {y:x for x,y in word2id.iteritems()}
     word2vec=load_word2vec()
 #     word2vec =extend_word2vec_lowercase(word2vec)
     rand_values=load_word2vec_to_init(rand_values, id2word, word2vec)
-#     normed_matrix = normalize(rand_values, axis=0, norm='l2')
     first_embeddings=theano.shared(value=np.array(rand_values,dtype=theano.config.floatX), borrow=True)   #wrap up the python variable "rand_values" into theano variable
 
 
@@ -108,314 +106,147 @@ def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_s
     first_common_input_l=dropout_layer(first_srng, common_input(first_embeddings, first_sents_ids_l), drop_p, train_flag)#embeddings[sents_ids_l.flatten()].reshape((batch_size,maxSentLen, emb_size)).dimshuffle(0,2,1) #the input format can be adapted into CNN or GRU or LSTM
     first_common_input_r=dropout_layer(first_srng, common_input(first_embeddings, first_sents_ids_r), drop_p, train_flag)#embeddings[sents_ids_r.flatten()].reshape((batch_size,maxSentLen, emb_size)).dimshuffle(0,2,1)
 
-#     first_psp_W = T.ones((emb_size,multi_psp_size), dtype='float32')#create_ensemble_para_with_bounds(rng, multi_psp_size, emb_size, 0.0, 1.0)
-#     first_psp_W = dropit(first_srng, first_psp_W, 0.3)
-
     gate_filter_shape=(hidden_size[0], 1, emb_size, 1)
+    phrase_filter_shape=(phrase_hidden_size, 1, hidden_size[0],3)
     def create_CNN_params(rng):
         conv_W_2_pre, conv_b_2_pre=create_conv_para(rng, filter_shape=gate_filter_shape)
         conv_W_2_gate, conv_b_2_gate=create_conv_para(rng, filter_shape=gate_filter_shape)
+        conv_W_2_phrase, conv_b_2_phrase=create_conv_para(rng, filter_shape=phrase_filter_shape)
         conv_W_2, conv_b_2=create_conv_para(rng, filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[0]))
-        conv_W_2_context, conv_b_2_context=create_conv_para(rng, filter_shape=(hidden_size[1], 1, hidden_size[0], 1))
-        return conv_W_2_pre, conv_b_2_pre,conv_W_2_gate, conv_b_2_gate,conv_W_2, conv_b_2,conv_W_2_context, conv_b_2_context
+        conv_W_2_context, conv_b_2_context=create_conv_para(rng, filter_shape=(hidden_size[1], 1, hidden_size[0]+phrase_hidden_size, 1))
+        return conv_W_2_pre, conv_b_2_pre,conv_W_2_gate, conv_b_2_gate,conv_W_2_phrase, conv_b_2_phrase,conv_W_2, conv_b_2,conv_W_2_context, conv_b_2_context
 
-    first_conv_W_pre, first_conv_b_pre,first_conv_W_gate, first_conv_b_gate,first_conv_W, first_conv_b,first_conv_W_context, first_conv_b_context = create_CNN_params(first_rng)
-    first_2_conv_W_pre, first_2_conv_b_pre,first_2_conv_W_gate, first_2_conv_b_gate,first_2_conv_W, first_2_conv_b,first_2_conv_W_context, first_2_conv_b_context = create_CNN_params(first_rng)
-    first_3_conv_W_pre, first_3_conv_b_pre,first_3_conv_W_gate, first_3_conv_b_gate,first_3_conv_W, first_3_conv_b,first_3_conv_W_context, first_3_conv_b_context = create_CNN_params(first_rng)
-    first_4_conv_W_pre, first_4_conv_b_pre,first_4_conv_W_gate, first_4_conv_b_gate,first_4_conv_W, first_4_conv_b,first_4_conv_W_context, first_4_conv_b_context = create_CNN_params(first_rng)
-    '''
-    dropout paras
-    '''
-    def dropout_group(rng, conv_W_2_pre, conv_W_2_gate, conv_W_2, conv_W_2_context):
-        drop_conv_W_2_pre = dropout_layer(rng, conv_W_2_pre, drop_p, train_flag)
-        drop_conv_W_2_gate = dropout_layer(rng, conv_W_2_gate, drop_p, train_flag)
-        drop_conv_W_2 = dropout_layer(rng, conv_W_2, drop_p, train_flag)
-        drop_conv_W_2_context = dropout_layer(rng, conv_W_2_context, drop_p, train_flag)
-        return drop_conv_W_2_pre,drop_conv_W_2_gate,drop_conv_W_2,drop_conv_W_2_context
-    drop_first_conv_W_pre,drop_first_conv_W_gate,drop_first_conv_W,drop_first_conv_W_context = dropout_group(first_srng, first_conv_W_pre, first_conv_W_gate, first_conv_W, first_conv_W_context)
-    drop_first_2_conv_W_pre,drop_first_2_conv_W_gate,drop_first_2_conv_W,drop_first_2_conv_W_context = dropout_group(first_srng, first_2_conv_W_pre, first_2_conv_W_gate, first_2_conv_W, first_2_conv_W_context)
-    drop_first_3_conv_W_pre,drop_first_3_conv_W_gate,drop_first_3_conv_W,drop_first_3_conv_W_context = dropout_group(first_srng, first_3_conv_W_pre, first_3_conv_W_gate, first_3_conv_W, first_3_conv_W_context)
-    drop_first_4_conv_W_pre,drop_first_4_conv_W_gate,drop_first_4_conv_W,drop_first_4_conv_W_context = dropout_group(first_srng, first_4_conv_W_pre, first_4_conv_W_gate, first_4_conv_W, first_4_conv_W_context)
-    first_NN_para=[
+    first_conv_W_pre, first_conv_b_pre,first_conv_W_gate, first_conv_b_gate,first_conv_W_phrase, first_conv_b_phrase,first_conv_W, first_conv_b,first_conv_W_context, first_conv_b_context = create_CNN_params(first_rngs[0])
+    first_2_conv_W_pre, first_2_conv_b_pre,first_2_conv_W_gate, first_2_conv_b_gate,first_2_conv_W_phrase, first_2_conv_b_phrase,first_2_conv_W, first_2_conv_b,first_2_conv_W_context, first_2_conv_b_context = create_CNN_params(first_rngs[1])
+    first_3_conv_W_pre, first_3_conv_b_pre,first_3_conv_W_gate, first_3_conv_b_gate,first_3_conv_W_phrase, first_3_conv_b_phrase,first_3_conv_W, first_3_conv_b,first_3_conv_W_context, first_3_conv_b_context = create_CNN_params(first_rngs[2])
+    first_4_conv_W_pre, first_4_conv_b_pre,first_4_conv_W_gate, first_4_conv_b_gate,first_4_conv_W_phrase, first_4_conv_b_phrase,first_4_conv_W, first_4_conv_b,first_4_conv_W_context, first_4_conv_b_context = create_CNN_params(first_rngs[3])
+    # first_5_conv_W_pre, first_5_conv_b_pre,first_5_conv_W_gate, first_5_conv_b_gate,first_5_conv_W, first_5_conv_b,first_5_conv_W_context, first_5_conv_b_context = create_CNN_params(first_rng)
+    # first_6_conv_W_pre, first_6_conv_b_pre,first_6_conv_W_gate, first_6_conv_b_gate,first_6_conv_W, first_6_conv_b,first_6_conv_W_context, first_6_conv_b_context = create_CNN_params(first_rng)
+
+
+    first_CNN_1_para=[
             first_conv_W_pre, first_conv_b_pre,
             first_conv_W_gate, first_conv_b_gate,
-            first_conv_W, first_conv_b,first_conv_W_context,
-
+            first_conv_W_phrase, first_conv_b_phrase,
+            first_conv_W, first_conv_b,first_conv_W_context]
+    first_CNN_2_para=[
             first_2_conv_W_pre, first_2_conv_b_pre,
             first_2_conv_W_gate, first_2_conv_b_gate,
-            first_2_conv_W, first_2_conv_b,first_2_conv_W_context,
-            
+            first_2_conv_W_phrase, first_2_conv_b_phrase,
+            first_2_conv_W, first_2_conv_b,first_2_conv_W_context]
+    first_CNN_3_para=[
             first_3_conv_W_pre, first_3_conv_b_pre,
             first_3_conv_W_gate, first_3_conv_b_gate,
-            first_3_conv_W, first_3_conv_b,first_3_conv_W_context,
-            
+            first_3_conv_W_phrase, first_3_conv_b_phrase,
+            first_3_conv_W, first_3_conv_b,first_3_conv_W_context]
+    first_CNN_4_para=[
             first_4_conv_W_pre, first_4_conv_b_pre,
             first_4_conv_W_gate, first_4_conv_b_gate,
+            first_4_conv_W_phrase, first_4_conv_b_phrase,
             first_4_conv_W, first_4_conv_b,first_4_conv_W_context]
 
+
     '''
-    first classifier
+    first copy
     '''
-    def classifier(rng,common_input_l,common_input_r,sents_mask_l, sents_mask_r,
+    def copy(rngs,common_input_l,common_input_r,sents_mask_l, sents_mask_r,
                    drop_conv_W_1_pre,conv_b_1_pre,drop_conv_W_1_gate,conv_b_1_gate,
+                   drop_conv_W_phrase, drop_conv_b_phrase,
                    drop_conv_W_1,conv_b_1,drop_conv_W_1_context, conv_b_1_context,
 
                    drop_conv_W_1_pre_2,conv_b_1_pre_2,drop_conv_W_1_gate_2,conv_b_1_gate_2,
+                   drop_conv_W_phrase_2, drop_conv_b_phrase_2,
                    drop_conv_W_1_2,conv_b_1_2,drop_conv_W_1_context_2, conv_b_1_context_2,
 
                    drop_conv_W_1_pre_3,conv_b_1_pre_3,drop_conv_W_1_gate_3,conv_b_1_gate_3,
+                   drop_conv_W_phrase_3, drop_conv_b_phrase_3,
                    drop_conv_W_1_3,conv_b_1_3,drop_conv_W_1_context_3, conv_b_1_context_3,
 
                    drop_conv_W_1_pre_4,conv_b_1_pre_4,drop_conv_W_1_gate_4,conv_b_1_gate_4,
+                   drop_conv_W_phrase_4, drop_conv_b_phrase_4,
                    drop_conv_W_1_4,conv_b_1_4,drop_conv_W_1_context_4, conv_b_1_context_4,
+
+                #    drop_conv_W_1_pre_5,conv_b_1_pre_5,drop_conv_W_1_gate_5,conv_b_1_gate_5,
+                #    drop_conv_W_1_5,conv_b_1_5,drop_conv_W_1_context_5, conv_b_1_context_5,
+                   #
+                #    drop_conv_W_1_pre_6,conv_b_1_pre_6,drop_conv_W_1_gate_6,conv_b_1_gate_6,
+                #    drop_conv_W_1_6,conv_b_1_6,drop_conv_W_1_context_6, conv_b_1_context_6,
                    labels):
-        conv_layer_1_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_l,
-                 mask_matrix = sents_mask_l,
-                 image_shape=(batch_size, 1, emb_size, maxSentLen),
-                 filter_shape=gate_filter_shape,
-                 W=drop_conv_W_1_pre, b=conv_b_1_pre,
-                 W_gate =drop_conv_W_1_gate, b_gate=conv_b_1_gate )
-        conv_layer_1_gate_r = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_r,
-                 mask_matrix = sents_mask_r,
-                 image_shape=(batch_size, 1, emb_size, maxSentLen),
-                 filter_shape=gate_filter_shape,
-                 W=drop_conv_W_1_pre, b=conv_b_1_pre,
-                 W_gate =drop_conv_W_1_gate, b_gate=conv_b_1_gate )
 
-        l_input_4_att = conv_layer_1_gate_l.output_tensor3#conv_layer_2_gate_l.masked_conv_out_sigmoid*conv_layer_2_pre_l.masked_conv_out+(1.0-conv_layer_2_gate_l.masked_conv_out_sigmoid)*common_input_l
-        r_input_4_att = conv_layer_1_gate_r.output_tensor3#conv_layer_2_gate_r.masked_conv_out_sigmoid*conv_layer_2_pre_r.masked_conv_out+(1.0-conv_layer_2_gate_r.masked_conv_out_sigmoid)*common_input_r
-
-        conv_layer_1 = Conv_for_Pair(rng,
-                origin_input_tensor3=common_input_l,
-                origin_input_tensor3_r = common_input_r,
-                input_tensor3=l_input_4_att,
-                input_tensor3_r = r_input_4_att,
-                 mask_matrix = sents_mask_l,
-                 mask_matrix_r = sents_mask_r,
-                 image_shape=(batch_size, 1, hidden_size[0], maxSentLen),
-                 image_shape_r = (batch_size, 1, hidden_size[0], maxSentLen),
-                 filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[0]),
-                 filter_shape_context=(hidden_size[1], 1,hidden_size[0], 1),
-                 W=drop_conv_W_1, b=conv_b_1,
-                 W_context=drop_conv_W_1_context, b_context=conv_b_1_context)
-
-#         attentive_sent_emb_l = conv_layer_1.attentive_maxpool_vec_l
-#         attentive_sent_emb_r = conv_layer_1.attentive_maxpool_vec_r
-        biased_attentive_sent_emb_l = conv_layer_1.biased_attentive_maxpool_vec_l
-        biased_attentive_sent_emb_r = conv_layer_1.biased_attentive_maxpool_vec_r
-
-#         cos = cosine_matrix1_matrix2_rowwise(attentive_sent_emb_l,attentive_sent_emb_r).dimshuffle(0,'x')
-#         euc = 1.0/(1.0+T.sqrt(1e-20+T.sum((attentive_sent_emb_l-attentive_sent_emb_r)**2, axis=1))).dimshuffle(0,'x')
-#         euc_sum = 1.0/(1.0+T.sqrt(1e-20+T.sum((conv_layer_1.attentive_sumpool_vec_l-conv_layer_1.attentive_sumpool_vec_r)**2, axis=1))).dimshuffle(0,'x')
-
-        HL_layer_1_input = T.concatenate([biased_attentive_sent_emb_l,biased_attentive_sent_emb_r, biased_attentive_sent_emb_l*biased_attentive_sent_emb_r],axis=1)
-        HL_layer_1_input_size = hidden_size[1]*3#+extra_size#+(maxSentLen*2+10*2)#+hidden_size[1]*3+1
-
-        HL_layer_1_W, HL_layer_1_b = create_HiddenLayer_para(rng, HL_layer_1_input_size, hidden_size[0])
-        HL_layer_1_params = [HL_layer_1_W, HL_layer_1_b]
-        drop_HL_layer_1_W = dropout_layer(first_srng, HL_layer_1_W, drop_p, train_flag)
-        HL_layer_1=HiddenLayer(rng, input=HL_layer_1_input, n_in=HL_layer_1_input_size, n_out=hidden_size[0], W=drop_HL_layer_1_W, b=HL_layer_1_b, activation=T.nnet.relu)
-
-        HL_layer_2_W, HL_layer_2_b = create_HiddenLayer_para(rng, hidden_size[0], hidden_size[0])
-        HL_layer_2_params = [HL_layer_2_W, HL_layer_2_b]
-        drop_HL_layer_2_W = dropout_layer(first_srng, HL_layer_2_W, drop_p, train_flag)
-        HL_layer_2=HiddenLayer(rng, input=HL_layer_1.output, n_in=hidden_size[0], n_out=hidden_size[0], W=drop_HL_layer_2_W, b=HL_layer_2_b, activation=T.nnet.relu)
-        LR_input_size=HL_layer_1_input_size+2*hidden_size[0]
-        U_a = create_ensemble_para(rng, 3, LR_input_size) # the weight matrix hidden_size*2
-        drop_U_a = dropout_layer(first_srng, U_a, drop_p, train_flag)
-        LR_b = theano.shared(value=np.zeros((3,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class
-        LR_para=[U_a, LR_b]
-        LR_input=T.tanh(T.concatenate([HL_layer_1_input, HL_layer_1.output, HL_layer_2.output],axis=1))
-        layer_LR=LogisticRegression(rng, input=LR_input, n_in=LR_input_size, n_out=3, W=drop_U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
-        '''
-        the second classifier
-        '''
-        conv_layer_2_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_l,
-                 mask_matrix = sents_mask_l,
-                 image_shape=(batch_size, 1, emb_size, maxSentLen),
-                 filter_shape=gate_filter_shape,
-                 W=drop_conv_W_1_pre_2, b=conv_b_1_pre_2,
-                 W_gate =drop_conv_W_1_gate_2, b_gate=conv_b_1_gate_2 )
-        conv_layer_2_gate_r = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_r,
-                 mask_matrix = sents_mask_r,
-                 image_shape=(batch_size, 1, emb_size, maxSentLen),
-                 filter_shape=gate_filter_shape,
-                 W=drop_conv_W_1_pre_2, b=conv_b_1_pre_2,
-                 W_gate =drop_conv_W_1_gate_2, b_gate=conv_b_1_gate_2 )
-
-        l_input_4_att_2 = conv_layer_2_gate_l.output_tensor3#conv_layer_2_gate_l.masked_conv_out_sigmoid*conv_layer_2_pre_l.masked_conv_out+(1.0-conv_layer_2_gate_l.masked_conv_out_sigmoid)*common_input_l
-        r_input_4_att_2 = conv_layer_2_gate_r.output_tensor3#conv_layer_2_gate_r.masked_conv_out_sigmoid*conv_layer_2_pre_r.masked_conv_out+(1.0-conv_layer_2_gate_r.masked_conv_out_sigmoid)*common_input_r
-
-        conv_layer_2 = Conv_for_Pair(rng,
-                origin_input_tensor3=common_input_l,
-                origin_input_tensor3_r = common_input_r,
-                input_tensor3=l_input_4_att_2,
-                input_tensor3_r = r_input_4_att_2,
-                 mask_matrix = sents_mask_l,
-                 mask_matrix_r = sents_mask_r,
-                 image_shape=(batch_size, 1, hidden_size[0], maxSentLen),
-                 image_shape_r = (batch_size, 1, hidden_size[0], maxSentLen),
-                 filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[0]),
-                 filter_shape_context=(hidden_size[1], 1,hidden_size[0], 1),
-                 W=drop_conv_W_1_2, b=conv_b_1_2,
-                 W_context=drop_conv_W_1_context_2, b_context=conv_b_1_context_2)
-        biased_attentive_sent_emb_l_2 = conv_layer_2.attentive_maxpool_vec_l
-        biased_attentive_sent_emb_r_2 = conv_layer_2.attentive_maxpool_vec_r
-
-        HL_layer_3_input = T.concatenate([biased_attentive_sent_emb_l_2,biased_attentive_sent_emb_r_2, biased_attentive_sent_emb_l_2*biased_attentive_sent_emb_r_2],axis=1)
-        HL_layer_3_input_size = hidden_size[1]*3#+extra_size#+(maxSentLen*2+10*2)#+hidden_size[1]*3+1
-
-        HL_layer_3_W, HL_layer_3_b = create_HiddenLayer_para(rng, HL_layer_3_input_size, hidden_size[0])
-        HL_layer_3_params = [HL_layer_3_W, HL_layer_3_b]
-        drop_HL_layer_3_W = dropout_layer(first_srng, HL_layer_3_W, drop_p, train_flag)
-        HL_layer_3=HiddenLayer(rng, input=HL_layer_3_input, n_in=HL_layer_3_input_size, n_out=hidden_size[0], W=drop_HL_layer_3_W, b=HL_layer_3_b, activation=T.nnet.relu)
-
-        HL_layer_4_W, HL_layer_4_b = create_HiddenLayer_para(rng, hidden_size[0], hidden_size[0])
-        HL_layer_4_params = [HL_layer_4_W, HL_layer_4_b]
-        drop_HL_layer_4_W = dropout_layer(first_srng, HL_layer_4_W, drop_p, train_flag)
-        HL_layer_4=HiddenLayer(rng, input=HL_layer_3.output, n_in=hidden_size[0], n_out=hidden_size[0], W=drop_HL_layer_4_W, b=HL_layer_4_b, activation=T.nnet.relu)
-        LR2_input_size=HL_layer_3_input_size+2*hidden_size[0]
-        U2_a = create_ensemble_para(rng, 3, LR2_input_size) # the weight matrix hidden_size*2
-        drop_U2_a = dropout_layer(first_srng, U2_a, drop_p, train_flag)
-        LR2_b = theano.shared(value=np.zeros((3,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class
-        LR2_para=[U2_a, LR2_b]
-        LR2_input=T.tanh(T.concatenate([HL_layer_3_input, HL_layer_3.output, HL_layer_4.output],axis=1))
-        layer_LR2=LogisticRegression(rng, input=LR2_input, n_in=LR2_input_size, n_out=3, W=drop_U2_a, b=LR2_b) #basically it is a multiplication between weight matrix and input feature vector
-
-        '''
-        the third classifier
-        '''
-        conv_layer_3_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_l,
-                 mask_matrix = sents_mask_l,
-                 image_shape=(batch_size, 1, emb_size, maxSentLen),
-                 filter_shape=gate_filter_shape,
-                 W=drop_conv_W_1_pre_3, b=conv_b_1_pre_3,
-                 W_gate =drop_conv_W_1_gate_3, b_gate=conv_b_1_gate_3 )
-        conv_layer_3_gate_r = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_r,
-                 mask_matrix = sents_mask_r,
-                 image_shape=(batch_size, 1, emb_size, maxSentLen),
-                 filter_shape=gate_filter_shape,
-                 W=drop_conv_W_1_pre_3, b=conv_b_1_pre_3,
-                 W_gate =drop_conv_W_1_gate_3, b_gate=conv_b_1_gate_3)
-
-        l_input_4_att_3 = conv_layer_3_gate_l.output_tensor3#conv_layer_2_gate_l.masked_conv_out_sigmoid*conv_layer_2_pre_l.masked_conv_out+(1.0-conv_layer_2_gate_l.masked_conv_out_sigmoid)*common_input_l
-        r_input_4_att_3 = conv_layer_3_gate_r.output_tensor3#conv_layer_2_gate_r.masked_conv_out_sigmoid*conv_layer_2_pre_r.masked_conv_out+(1.0-conv_layer_2_gate_r.masked_conv_out_sigmoid)*common_input_r
-
-        conv_layer_3 = Conv_for_Pair(rng,
-                origin_input_tensor3=common_input_l,
-                origin_input_tensor3_r = common_input_r,
-                input_tensor3=l_input_4_att_3,
-                input_tensor3_r = r_input_4_att_3,
-                 mask_matrix = sents_mask_l,
-                 mask_matrix_r = sents_mask_r,
-                 image_shape=(batch_size, 1, hidden_size[0], maxSentLen),
-                 image_shape_r = (batch_size, 1, hidden_size[0], maxSentLen),
-                 filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[0]),
-                 filter_shape_context=(hidden_size[1], 1,hidden_size[0], 1),
-                 W=drop_conv_W_1_3, b=conv_b_1_3,
-                 W_context=drop_conv_W_1_context_3, b_context=conv_b_1_context_3)
-        biased_attentive_sent_emb_l_3 = conv_layer_3.biased_attentive_maxpool_vec_l
-        biased_attentive_sent_emb_r_3 = conv_layer_3.biased_attentive_maxpool_vec_r
-
-        HL_layer_5_input = T.concatenate([biased_attentive_sent_emb_l_3,biased_attentive_sent_emb_r_3, biased_attentive_sent_emb_l_3*biased_attentive_sent_emb_r_3],axis=1)
-        HL_layer_5_input_size = hidden_size[1]*3#+extra_size#+(maxSentLen*2+10*2)#+hidden_size[1]*3+1
-
-        HL_layer_5_W, HL_layer_5_b = create_HiddenLayer_para(rng, HL_layer_5_input_size, hidden_size[0])
-        HL_layer_5_params = [HL_layer_5_W, HL_layer_5_b]
-        drop_HL_layer_5_W = dropout_layer(first_srng, HL_layer_5_W, drop_p, train_flag)
-        HL_layer_5=HiddenLayer(rng, input=HL_layer_5_input, n_in=HL_layer_5_input_size, n_out=hidden_size[0], W=drop_HL_layer_5_W, b=HL_layer_5_b, activation=T.nnet.relu)
-
-        HL_layer_6_W, HL_layer_6_b = create_HiddenLayer_para(rng, hidden_size[0], hidden_size[0])
-        HL_layer_6_params = [HL_layer_6_W, HL_layer_6_b]
-        drop_HL_layer_6_W = dropout_layer(first_srng, HL_layer_6_W, drop_p, train_flag)
-        HL_layer_6=HiddenLayer(rng, input=HL_layer_5.output, n_in=hidden_size[0], n_out=hidden_size[0], W=drop_HL_layer_6_W, b=HL_layer_6_b, activation=T.nnet.relu)
-        LR3_input_size=HL_layer_5_input_size+2*hidden_size[0]
-        U3_a = create_ensemble_para(rng, 3, LR3_input_size) # the weight matrix hidden_size*2
-        drop_U3_a = dropout_layer(first_srng, U3_a, drop_p, train_flag)
-        LR3_b = theano.shared(value=np.zeros((3,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class
-        LR3_para=[U3_a, LR3_b]
-        LR3_input=T.tanh(T.concatenate([HL_layer_5_input, HL_layer_5.output, HL_layer_6.output],axis=1))
-        layer_LR3=LogisticRegression(rng, input=LR3_input, n_in=LR3_input_size, n_out=3, W=drop_U3_a, b=LR3_b) #basically it is a multiplication between weight matrix and input feature vector
-
-        '''
-        the fourth classifier
-        '''
-        conv_layer_4_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_l,
-                 mask_matrix = sents_mask_l,
-                 image_shape=(batch_size, 1, emb_size, maxSentLen),
-                 filter_shape=gate_filter_shape,
-                 W=drop_conv_W_1_pre_4, b=conv_b_1_pre_4,
-                 W_gate =drop_conv_W_1_gate_4, b_gate=conv_b_1_gate_4 )
-        conv_layer_4_gate_r = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_r,
-                 mask_matrix = sents_mask_r,
-                 image_shape=(batch_size, 1, emb_size, maxSentLen),
-                 filter_shape=gate_filter_shape,
-                 W=drop_conv_W_1_pre_4, b=conv_b_1_pre_4,
-                 W_gate =drop_conv_W_1_gate_4, b_gate=conv_b_1_gate_4)
-
-        l_input_4_att_4 = conv_layer_4_gate_l.output_tensor3#conv_layer_2_gate_l.masked_conv_out_sigmoid*conv_layer_2_pre_l.masked_conv_out+(1.0-conv_layer_2_gate_l.masked_conv_out_sigmoid)*common_input_l
-        r_input_4_att_4 = conv_layer_4_gate_r.output_tensor3#conv_layer_2_gate_r.masked_conv_out_sigmoid*conv_layer_2_pre_r.masked_conv_out+(1.0-conv_layer_2_gate_r.masked_conv_out_sigmoid)*common_input_r
-
-        conv_layer_4 = Conv_for_Pair(rng,
-                origin_input_tensor3=common_input_l,
-                origin_input_tensor3_r = common_input_r,
-                input_tensor3=l_input_4_att_4,
-                input_tensor3_r = r_input_4_att_4,
-                 mask_matrix = sents_mask_l,
-                 mask_matrix_r = sents_mask_r,
-                 image_shape=(batch_size, 1, hidden_size[0], maxSentLen),
-                 image_shape_r = (batch_size, 1, hidden_size[0], maxSentLen),
-                 filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[0]),
-                 filter_shape_context=(hidden_size[1], 1,hidden_size[0], 1),
-                 W=drop_conv_W_1_4, b=conv_b_1_4,
-                 W_context=drop_conv_W_1_context_4, b_context=conv_b_1_context_4)
-        biased_attentive_sent_emb_l_4 = conv_layer_4.attentive_maxpool_vec_l
-        biased_attentive_sent_emb_r_4 = conv_layer_4.attentive_maxpool_vec_r
-
-        HL_layer_7_input = T.concatenate([biased_attentive_sent_emb_l_4,biased_attentive_sent_emb_r_4, biased_attentive_sent_emb_l_4*biased_attentive_sent_emb_r_4],axis=1)
-        HL_layer_7_input_size = hidden_size[1]*3#+extra_size#+(maxSentLen*2+10*2)#+hidden_size[1]*3+1
-
-        HL_layer_7_W, HL_layer_7_b = create_HiddenLayer_para(rng, HL_layer_7_input_size, hidden_size[0])
-        HL_layer_7_params = [HL_layer_7_W, HL_layer_7_b]
-        drop_HL_layer_7_W = dropout_layer(first_srng, HL_layer_7_W, drop_p, train_flag)
-        HL_layer_7=HiddenLayer(rng, input=HL_layer_7_input, n_in=HL_layer_7_input_size, n_out=hidden_size[0], W=drop_HL_layer_7_W, b=HL_layer_7_b, activation=T.nnet.relu)
-
-        HL_layer_8_W, HL_layer_8_b = create_HiddenLayer_para(rng, hidden_size[0], hidden_size[0])
-        HL_layer_8_params = [HL_layer_8_W, HL_layer_8_b]
-        drop_HL_layer_8_W = dropout_layer(first_srng, HL_layer_8_W, drop_p, train_flag)
-        HL_layer_8=HiddenLayer(rng, input=HL_layer_7.output, n_in=hidden_size[0], n_out=hidden_size[0], W=drop_HL_layer_8_W, b=HL_layer_8_b, activation=T.nnet.relu)
-        LR4_input_size=HL_layer_7_input_size+2*hidden_size[0]
-        U4_a = create_ensemble_para(rng, 3, LR4_input_size) # the weight matrix hidden_size*2
-        drop_U4_a = dropout_layer(first_srng, U4_a, drop_p, train_flag)
-        LR4_b = theano.shared(value=np.zeros((3,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class
-        LR4_para=[U4_a, LR4_b]
-        LR4_input=T.tanh(T.concatenate([HL_layer_7_input, HL_layer_7.output, HL_layer_8.output],axis=1))
-        layer_LR4=LogisticRegression(rng, input=LR4_input, n_in=LR4_input_size, n_out=3, W=drop_U4_a, b=LR4_b) #basically it is a multiplication between weight matrix and input feature vector
-
+        loss_0_0, distr_0_0, params_0_0 = one_classifier_in_one_copy(rngs[0], common_input_l,common_input_r,sents_mask_l,sents_mask_r,batch_size, emb_size,
+                                                                     maxSentLen,gate_filter_shape,phrase_filter_shape,hidden_size,filter_size,
+                               first_srng, drop_p,train_flag,labels,
+                               drop_conv_W_1_pre,conv_b_1_pre,drop_conv_W_1_gate,conv_b_1_gate,
+                               drop_conv_W_phrase, drop_conv_b_phrase,
+                               drop_conv_W_1,conv_b_1,drop_conv_W_1_context,conv_b_1_context,
+                               True)
+        loss_0_1, distr_0_1, params_0_1 = one_classifier_in_one_copy(rngs[1], common_input_l,common_input_r,sents_mask_l,sents_mask_r,batch_size, emb_size,
+                                                                     maxSentLen,gate_filter_shape,phrase_filter_shape,hidden_size,filter_size,
+                               first_srng, drop_p,train_flag,labels,
+                               drop_conv_W_1_pre_2,conv_b_1_pre_2,drop_conv_W_1_gate_2,conv_b_1_gate_2,
+                               drop_conv_W_phrase_2, drop_conv_b_phrase_2,
+                               drop_conv_W_1_2,conv_b_1_2,drop_conv_W_1_context_2,conv_b_1_context_2,
+                               False)
+        loss_0_2, distr_0_2, params_0_2 = one_classifier_in_one_copy(rngs[2], common_input_l,common_input_r,sents_mask_l,sents_mask_r,batch_size, emb_size,
+                                                                     maxSentLen,gate_filter_shape,phrase_filter_shape,hidden_size,filter_size,
+                               first_srng, drop_p,train_flag,labels,
+                               drop_conv_W_1_pre_3,conv_b_1_pre_3,drop_conv_W_1_gate_3,conv_b_1_gate_3,
+                               drop_conv_W_phrase_3, drop_conv_b_phrase_3,
+                               drop_conv_W_1_3,conv_b_1_3,drop_conv_W_1_context_3,conv_b_1_context_3,
+                               True)
+        loss_0_3, distr_0_3, params_0_3 = one_classifier_in_one_copy(rngs[3], common_input_l,common_input_r,sents_mask_l,sents_mask_r,batch_size, emb_size,
+                                                                     maxSentLen,gate_filter_shape,phrase_filter_shape,hidden_size,filter_size,
+                               first_srng, drop_p,train_flag,labels,
+                               drop_conv_W_1_pre_4,conv_b_1_pre_4,drop_conv_W_1_gate_4,conv_b_1_gate_4,
+                               drop_conv_W_phrase_4, drop_conv_b_phrase_4,
+                               drop_conv_W_1_4,conv_b_1_4,drop_conv_W_1_context_4,conv_b_1_context_4,
+                               False)
+        # loss_0_4, distr_0_4, params_0_4 = one_classifier_in_one_copy(rng, common_input_l,common_input_r,sents_mask_l,sents_mask_r,batch_size, emb_size,
+        #                                                              maxSentLen,gate_filter_shape,hidden_size,filter_size,
+        #                        first_srng, drop_p,train_flag,labels,
+        #                        drop_conv_W_1_pre_5,conv_b_1_pre_5,drop_conv_W_1_gate_5,conv_b_1_gate_5,
+        #                        drop_conv_W_1_5,conv_b_1_5,drop_conv_W_1_context_5,conv_b_1_context_5,
+        #                        True)
+        # loss_0_5, distr_0_5, params_0_5 = one_classifier_in_one_copy(rng, common_input_l,common_input_r,sents_mask_l,sents_mask_r,batch_size, emb_size,
+        #                                                              maxSentLen,gate_filter_shape,hidden_size,filter_size,
+        #                        first_srng, drop_p,train_flag,labels,
+        #                        drop_conv_W_1_pre_6,conv_b_1_pre_6,drop_conv_W_1_gate_6,conv_b_1_gate_6,
+        #                        drop_conv_W_1_6,conv_b_1_6,drop_conv_W_1_context_6,conv_b_1_context_6,
+        #                        False)
 
 #         psp_label = T.repeat(labels, multi_psp_size)
 
-        loss_0=layer_LR.negative_log_likelihood(labels)+layer_LR2.negative_log_likelihood(labels)+layer_LR3.negative_log_likelihood(labels)+layer_LR4.negative_log_likelihood(labels)  #for classification task, we usually used negative log likelihood as loss, the lower the better.
-        para_0 = LR_para+HL_layer_1_params+HL_layer_2_params+LR2_para+HL_layer_3_params+HL_layer_4_params +LR3_para+HL_layer_5_params+HL_layer_6_params +LR4_para+HL_layer_7_params+HL_layer_8_params
+        loss_0=[(loss_0_0+loss_0_1+loss_0_2+loss_0_3)/4.0,loss_0_0,loss_0_1,loss_0_2,loss_0_3 ]  #5
+        para_0 = [params_0_0,params_0_1,params_0_2,params_0_3]
 
 
 #         loss = loss_0+loss_1+loss_2
-        batch_distr = layer_LR.p_y_given_x+layer_LR2.p_y_given_x+layer_LR3.p_y_given_x+layer_LR4.p_y_given_x#T.sum((layer_LR.p_y_given_x).reshape((batch_size, multi_psp_size,3)), axis=1)  #(batch, 3)
-        batch_error = (layer_LR.errors(labels)+layer_LR2.errors(labels)+layer_LR3.errors(labels)+layer_LR4.errors(labels))/4.0
-        return loss_0/4.0, para_0, batch_distr, batch_error
+        batch_distr = distr_0_0+distr_0_1+distr_0_2+distr_0_3#T.sum((layer_LR.p_y_given_x).reshape((batch_size, multi_psp_size,3)), axis=1)  #(batch, 3)
 
-    first_loss, first_classifier_params, first_test_distr, first_error = classifier(first_rng,first_common_input_l,first_common_input_r,first_sents_mask_l,first_sents_mask_r,
-                                                                                    drop_first_conv_W_pre,first_conv_b_pre,drop_first_conv_W_gate,first_conv_b_gate,
-                                                                                    drop_first_conv_W,first_conv_b,drop_first_conv_W_context,first_conv_b_context,
+        return loss_0, para_0, batch_distr
 
-                                                                                    drop_first_2_conv_W_pre,first_2_conv_b_pre,drop_first_2_conv_W_gate,first_2_conv_b_gate,
-                                                                                    drop_first_2_conv_W,first_2_conv_b,drop_first_2_conv_W_context,first_2_conv_b_context,
-                                                                                    
-                                                                                    drop_first_3_conv_W_pre,first_3_conv_b_pre,drop_first_3_conv_W_gate,first_3_conv_b_gate,
-                                                                                    drop_first_3_conv_W,first_3_conv_b,drop_first_3_conv_W_context,first_3_conv_b_context,
-                                                                                    
-                                                                                    drop_first_4_conv_W_pre,first_4_conv_b_pre,drop_first_4_conv_W_gate,first_4_conv_b_gate,
-                                                                                    drop_first_4_conv_W,first_4_conv_b,drop_first_4_conv_W_context,first_4_conv_b_context,
+    first_loss, first_classifier_params, first_test_distr = copy(first_rngs,first_common_input_l,first_common_input_r,first_sents_mask_l,first_sents_mask_r,
+                                                                                    first_conv_W_pre,first_conv_b_pre,first_conv_W_gate,first_conv_b_gate,
+                                                                                    first_conv_W_phrase, first_conv_b_phrase,
+                                                                                    first_conv_W,first_conv_b,first_conv_W_context,first_conv_b_context,
+
+                                                                                    first_2_conv_W_pre,first_2_conv_b_pre,first_2_conv_W_gate,first_2_conv_b_gate,
+                                                                                    first_2_conv_W_phrase, first_2_conv_b_phrase,
+                                                                                    first_2_conv_W,first_2_conv_b,first_2_conv_W_context,first_2_conv_b_context,
+
+                                                                                    first_3_conv_W_pre,first_3_conv_b_pre,first_3_conv_W_gate,first_3_conv_b_gate,
+                                                                                    first_3_conv_W_phrase, first_3_conv_b_phrase,
+                                                                                    first_3_conv_W,first_3_conv_b,first_3_conv_W_context,first_3_conv_b_context,
+
+                                                                                    first_4_conv_W_pre,first_4_conv_b_pre,first_4_conv_W_gate,first_4_conv_b_gate,
+                                                                                    first_4_conv_W_phrase, first_4_conv_b_phrase,
+                                                                                    first_4_conv_W,first_4_conv_b,first_4_conv_W_context,first_4_conv_b_context,
+
+                                                                                    # drop_first_5_conv_W_pre,first_5_conv_b_pre,drop_first_5_conv_W_gate,first_5_conv_b_gate,
+                                                                                    # drop_first_5_conv_W,first_5_conv_b,drop_first_5_conv_W_context,first_5_conv_b_context,
+                                                                                    #
+                                                                                    # drop_first_6_conv_W_pre,first_6_conv_b_pre,drop_first_6_conv_W_gate,first_6_conv_b_gate,
+                                                                                    # drop_first_6_conv_W,first_6_conv_b,drop_first_6_conv_W_context,first_6_conv_b_context,
                                                                                     first_labels)
 
 
@@ -445,21 +276,23 @@ def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_s
     # repeat_posi = T.extra_ops.repeat(prob_batch_posi, prob_batch_nega.shape[0], axis=0)
     # repeat_nega = T.extra_ops.repeat(prob_batch_nega.dimshuffle('x',0), prob_batch_posi.shape[0], axis=0).flatten()
     # loss2 = T.mean(T.maximum(0.0, margin-repeat_posi+repeat_nega))
+    
+    first_common_para = [first_embeddings]
+    first_classifier_1_para = first_CNN_1_para+first_classifier_params[0]
+    first_classifier_2_para = first_CNN_2_para+first_classifier_params[1]
+    first_classifier_3_para = first_CNN_3_para+first_classifier_params[2]
+    first_classifier_4_para = first_CNN_4_para+first_classifier_params[3]
+    
+    first_common_updates =   Gradient_Cost_Para(first_loss[0],first_common_para, learning_rate)
+    first_classifier_1_updates =   Gradient_Cost_Para(first_loss[1],first_classifier_1_para, learning_rate)
+    first_classifier_2_updates =   Gradient_Cost_Para(first_loss[2],first_classifier_2_para, learning_rate)
+    first_classifier_3_updates =   Gradient_Cost_Para(first_loss[3],first_classifier_3_para, learning_rate)
+    first_classifier_4_updates =   Gradient_Cost_Para(first_loss[4],first_classifier_4_para, learning_rate)
+
+    cost=first_loss[0]
 
 
-    first_params = [first_embeddings]+first_NN_para+first_classifier_params
-
-    params = first_params#+second_params+third_params+fourth_params+fifth_params
-
-#     L2_reg =L2norm_paraList([embeddings,HL_layer_1.W, HL_layer_2.W])
-
-#     diversify_reg= (Diversify_Reg(conv_W_2_pre_to_matrix)+Diversify_Reg(conv_W_2_gate_to_matrix)+
-#                     Diversify_Reg(conv_W_2_to_matrix)+Diversify_Reg(conv_W_2_context_to_matrix))
-
-    cost=first_loss#+0.1*loss2#+loss2#+L2_weight*L2_reg
-
-
-    first_updates =   Gradient_Cost_Para(first_loss,first_params, learning_rate)
+    first_updates =   first_common_updates+first_classifier_1_updates+first_classifier_2_updates+first_classifier_3_updates+first_classifier_4_updates
 
     updates = first_updates
 
@@ -574,7 +407,7 @@ def evaluate_lenet5(learning_rate=0.02, n_epochs=4, L2_weight=0.0000001, extra_s
                 if test_acc_comb > max_acc_test:
                     max_acc_test=test_acc_comb
 #                     store_model_to_file('/mounts/data/proj/wenpeng/Dataset/StanfordEntailment/model_para_single_model_'+str(max_acc_test), params)
-                    
+
                     if len(pred_ys)!=len(gold_test_rows):
                         print 'len(pred_ys)!=len(gold_test_rows):', len(pred_ys), len(gold_test_rows)
                     else:

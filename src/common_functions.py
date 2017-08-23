@@ -229,7 +229,7 @@ class Conv_for_Pair(object):
     """we define CNN by input tensor3 and output tensor3, like RNN, filter width must by 3,5,7..."""
 
     def __init__(self, rng, origin_input_tensor3, origin_input_tensor3_r, input_tensor3, input_tensor3_r, mask_matrix, mask_matrix_r,
-                 filter_shape, filter_shape_context,image_shape, image_shape_r,W, b, W_context, b_context):
+                 filter_shape, filter_shape_context,image_shape, image_shape_r,image_shape_context,image_shape_context_r,W, b, W_context, b_context):
         batch_size = origin_input_tensor3.shape[0]
         hidden_size = origin_input_tensor3.shape[1]
         l_len = origin_input_tensor3.shape[2]
@@ -237,7 +237,9 @@ class Conv_for_Pair(object):
         #construct interaction matrix
         input_tensor3 = input_tensor3*mask_matrix.dimshuffle(0,'x',1)
         input_tensor3_r = input_tensor3_r*mask_matrix_r.dimshuffle(0,'x',1) #(batch, hidden, r_len)
+        # mask_tensor3 = T.batched_dot(mask_matrix.dimshuffle(0,1,'x'), mask_matrix_r.dimshuffle(0,'x',1)) #(batch, l_len, r_len)
         dot_tensor3 = T.batched_dot(input_tensor3.dimshuffle(0,2,1),input_tensor3_r) #(batch, l_len, r_len)
+        # masked_dot_tensor3  = T.switch(mask_tensor3, dot_tensor3, np.float32(-1e+20))
 
 #         self.cosine_tensor3 = dot_tensor3
         # self.cosine_tensor3 = dot_tensor3/(1e-8+T.batched_dot(T.sqrt(1e-8+T.sum(input_tensor3**2, axis=1)).dimshuffle(0,1,'x'), T.sqrt(1e-8+T.sum(input_tensor3_r**2, axis=1)).dimshuffle(0,'x', 1)))
@@ -274,8 +276,8 @@ class Conv_for_Pair(object):
 #                  filter_shape=filter_shape_context, W=W_ordercontext, b=b_ordercontext)
 #         weighted_sum_l =  ordercontext_model_l.maxpool_vec.reshape((input_tensor3.shape[0], input_tensor3_r.shape[2], filter_shape_context[2])).dimshuffle(0,2,1) #(batch, hidden, r_len)
 
-        dot_matrix_for_right = T.nnet.softmax(dot_tensor3.reshape((dot_tensor3.shape[0]*dot_tensor3.shape[1], dot_tensor3.shape[2])))  #(batch*l_len, r_len)
-        dot_tensor3_for_right = dot_matrix_for_right.reshape((dot_tensor3.shape[0], dot_tensor3.shape[1], dot_tensor3.shape[2]))#(batch, l_len, r_len)
+        dot_matrix_for_right = T.nnet.softmax(dot_tensor3.reshape((batch_size*l_len, r_len)))  #(batch*l_len, r_len)
+        dot_tensor3_for_right = dot_matrix_for_right.reshape((batch_size, l_len, r_len))#(batch, l_len, r_len)
 #         argsort_right = T.argsort(dot_matrix_for_right, axis=1)
 #         diff_right = T.abs_(T.extra_ops.repeat(T.arange(r_len).dimshuffle('x',0), batch_size*l_len, axis=0)- argsort_right[:,-1].dimshuffle(0,'x'))#(batch*l_len, r_len)
 #         distance_biases_tensor3_right = T.cast((1.0/(5.0+T.minimum(diff_right, 10))).reshape((batch_size, l_len, r_len)), 'float32')
@@ -283,8 +285,8 @@ class Conv_for_Pair(object):
         # dot_tensor3_for_right = fine_grained_softmax_tensor3(dot_tensor3,left_boundaries_r)
         weighted_sum_r = T.batched_dot(dot_tensor3_for_right, input_tensor3_r.dimshuffle(0,2,1)).dimshuffle(0,2,1)*mask_matrix.dimshuffle(0,'x',1) #(batch,hidden, l_len)
 
-        dot_matrix_for_left = T.nnet.softmax(dot_tensor3.dimshuffle(0,2,1).reshape((dot_tensor3.shape[0]*dot_tensor3.shape[2], dot_tensor3.shape[1]))) #(batch*r_len, l_len)
-        dot_tensor3_for_left = dot_matrix_for_left.reshape((dot_tensor3.shape[0], dot_tensor3.shape[2], dot_tensor3.shape[1]))#(batch, r_len, l_len)
+        dot_matrix_for_left = T.nnet.softmax(dot_tensor3.dimshuffle(0,2,1).reshape((batch_size*r_len, l_len))) #(batch*r_len, l_len)
+        dot_tensor3_for_left = dot_matrix_for_left.reshape((batch_size, r_len, l_len))#(batch, r_len, l_len)
 #         argsort_left = T.argsort(dot_matrix_for_left, axis=1)#(batch*r_len, l_len)
 #         diff_left = T.abs_(T.extra_ops.repeat(T.arange(l_len).dimshuffle('x',0), batch_size*r_len, axis=0)- argsort_left[:,-1].dimshuffle(0,'x'))#(batch*r_len, l_len)
 #         distance_biases_tensor3_left = T.cast((1.0/(5.0+T.minimum(diff_left, 10))).reshape((batch_size, r_len, l_len)), 'float32')
@@ -308,7 +310,7 @@ class Conv_for_Pair(object):
         temp_conv_output_l = conv_model_l.naked_conv_out
         conv_model_weighted_r = Conv_with_Mask(rng, input_tensor3=weighted_sum_r,
                  mask_matrix = mask_matrix,
-                 image_shape=image_shape,
+                 image_shape=image_shape_context,
                  filter_shape=filter_shape_context, W=W_context, b=b_context) # note that b_context is not used
         temp_conv_output_weighted_r = conv_model_weighted_r.naked_conv_out
         '''
@@ -346,7 +348,7 @@ class Conv_for_Pair(object):
         temp_conv_output_r = conv_model_r.naked_conv_out
         conv_model_weighted_l = Conv_with_Mask(rng, input_tensor3=weighted_sum_l,
                  mask_matrix = mask_matrix_r,
-                 image_shape=image_shape_r,
+                 image_shape=image_shape_context_r,
                  filter_shape=filter_shape_context, W=W_context, b=b_context) # note that b_context is not used
         temp_conv_output_weighted_l = conv_model_weighted_l.naked_conv_out
         '''
@@ -1668,13 +1670,17 @@ class GRU_Average_Pooling_Scan(object):
 #     return input * mask
 
 def dropit(srng, weight, drop):
-    # proportion of probability to retain
-    retain_prob = 1 - drop
-    mask = srng.binomial(n=1, p=retain_prob, size=weight.shape, dtype='floatX')
-    return T.cast(weight * mask, theano.config.floatX)
+    if drop>0.0:
+        # proportion of probability to retain
+        retain_prob = 1 - drop
+        mask = (srng.binomial(n=1, p=retain_prob, size=weight.shape, dtype='floatX'))/retain_prob #inverted dropout
+        return T.cast(weight * mask, theano.config.floatX)
+    else:
+        return weight
 
 def dont_dropit(weight, drop):
-    return (1 - drop)*T.cast(weight, theano.config.floatX)
+    # return (1 - drop)*T.cast(weight, theano.config.floatX)
+    return weight  #do nothing in testing in inverted dropout
 
 def dropout_layer(srng,weight, drop, train):
     result = theano.ifelse.ifelse(T.eq(train, 1),
@@ -2070,6 +2076,14 @@ def shuffle_big_list(lis):
     newlis+=lis[-remain:]
     return  newlis
 
+def Gradient_Cost_Para_in_Group(cost_list,params_list,learning_rate):
+    group_size = len(cost_list)
+    updates=[]
+    for i in range(group_size):
+        updates_i = Gradient_Cost_Para(cost_list[i],params_list[i],learning_rate)
+        updates+=updates_i
+    return updates
+
 def Gradient_Cost_Para(cost,params,learning_rate):
 #     params = [embeddings]+NN_para+LR_para+HL_layer_1.params+HL_layer_2.params   # put all model parameters together
 #     cost=loss#+L2_weight*L2_reg
@@ -2155,3 +2169,344 @@ def Two_Tensor3_Conv_Mutually(rng, tensor1, tensor2, mask1, mask2, hidden_size, 
     batch_l_maxpool = result_pair[0] #(batch, 1, r_len-filter_size+1)
     batch_r_maxpool = result_pair[1] #(batch, l_len-filter_size+1)
     return batch_l_maxpool.reshape((batch_l_maxpool.shape[0],batch_l_maxpool.shape[2])), batch_r_maxpool.reshape((batch_r_maxpool.shape[0],batch_r_maxpool.shape[2]))
+
+def ACNN_entail_OneFilterWidth(rng,common_input_l,common_input_r,sents_mask_l,sents_mask_r,batch_size, emb_size,hidden_size, filter_size,maxSentLen,gate_filter_shape,
+                               drop_conv_W_1_pre,conv_b_1_pre,drop_conv_W_1_gate,conv_b_1_gate,drop_conv_W_1,conv_b_1,drop_conv_W_1_context,conv_b_1_context,
+                               drop_conv_W_1_pre_2,conv_b_1_pre_2,drop_conv_W_1_gate_2,conv_b_1_gate_2,drop_conv_W_1_2, conv_b_1_2,drop_conv_W_1_context_2,conv_b_1_context_2,
+                               drop_conv_W_1_pre_3,conv_b_1_pre_3,drop_conv_W_1_gate_3,conv_b_1_gate_3,drop_conv_W_1_3, conv_b_1_3,drop_conv_W_1_context_3,conv_b_1_context_3,
+                               drop_conv_W_1_pre_4,conv_b_1_pre_4,drop_conv_W_1_gate_4,conv_b_1_gate_4,drop_conv_W_1_4, conv_b_1_4,drop_conv_W_1_context_4,conv_b_1_context_4,
+                               first_srng,drop_p,train_flag,labels):
+    conv_layer_1_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_l,
+             mask_matrix = sents_mask_l,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_conv_W_1_pre, b=conv_b_1_pre,
+             W_gate =drop_conv_W_1_gate, b_gate=conv_b_1_gate )
+    conv_layer_1_gate_r = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_r,
+             mask_matrix = sents_mask_r,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_conv_W_1_pre, b=conv_b_1_pre,
+             W_gate =drop_conv_W_1_gate, b_gate=conv_b_1_gate )
+
+    l_input_4_att = conv_layer_1_gate_l.output_tensor3#conv_layer_2_gate_l.masked_conv_out_sigmoid*conv_layer_2_pre_l.masked_conv_out+(1.0-conv_layer_2_gate_l.masked_conv_out_sigmoid)*common_input_l
+    r_input_4_att = conv_layer_1_gate_r.output_tensor3#conv_layer_2_gate_r.masked_conv_out_sigmoid*conv_layer_2_pre_r.masked_conv_out+(1.0-conv_layer_2_gate_r.masked_conv_out_sigmoid)*common_input_r
+
+    conv_layer_1 = Conv_for_Pair(rng,
+            origin_input_tensor3=common_input_l,
+            origin_input_tensor3_r = common_input_r,
+            input_tensor3=l_input_4_att,
+            input_tensor3_r = r_input_4_att,
+             mask_matrix = sents_mask_l,
+             mask_matrix_r = sents_mask_r,
+             image_shape=(batch_size, 1, hidden_size[0], maxSentLen),
+             image_shape_r = (batch_size, 1, hidden_size[0], maxSentLen),
+             filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size),
+             filter_shape_context=(hidden_size[1], 1,hidden_size[0], 1),
+             W=drop_conv_W_1, b=conv_b_1,
+             W_context=drop_conv_W_1_context, b_context=conv_b_1_context)
+
+#         attentive_sent_emb_l = conv_layer_1.attentive_maxpool_vec_l
+#         attentive_sent_emb_r = conv_layer_1.attentive_maxpool_vec_r
+    biased_attentive_sent_emb_l = conv_layer_1.biased_attentive_maxpool_vec_l
+    biased_attentive_sent_emb_r = conv_layer_1.biased_attentive_maxpool_vec_r
+
+#         cos = cosine_matrix1_matrix2_rowwise(attentive_sent_emb_l,attentive_sent_emb_r).dimshuffle(0,'x')
+#         euc = 1.0/(1.0+T.sqrt(1e-20+T.sum((attentive_sent_emb_l-attentive_sent_emb_r)**2, axis=1))).dimshuffle(0,'x')
+#         euc_sum = 1.0/(1.0+T.sqrt(1e-20+T.sum((conv_layer_1.attentive_sumpool_vec_l-conv_layer_1.attentive_sumpool_vec_r)**2, axis=1))).dimshuffle(0,'x')
+
+    HL_layer_1_input = T.concatenate([biased_attentive_sent_emb_l,biased_attentive_sent_emb_r, biased_attentive_sent_emb_l*biased_attentive_sent_emb_r],axis=1)
+    HL_layer_1_input_size = hidden_size[1]*3#+extra_size#+(maxSentLen*2+10*2)#+hidden_size[1]*3+1
+
+    HL_layer_1_W, HL_layer_1_b = create_HiddenLayer_para(rng, HL_layer_1_input_size, hidden_size[0])
+    HL_layer_1_params = [HL_layer_1_W, HL_layer_1_b]
+    drop_HL_layer_1_W = dropout_layer(first_srng, HL_layer_1_W, drop_p, train_flag)
+    HL_layer_1=HiddenLayer(rng, input=HL_layer_1_input, n_in=HL_layer_1_input_size, n_out=hidden_size[0], W=drop_HL_layer_1_W, b=HL_layer_1_b, activation=T.nnet.relu)
+
+    HL_layer_2_W, HL_layer_2_b = create_HiddenLayer_para(rng, hidden_size[0], hidden_size[0])
+    HL_layer_2_params = [HL_layer_2_W, HL_layer_2_b]
+    drop_HL_layer_2_W = dropout_layer(first_srng, HL_layer_2_W, drop_p, train_flag)
+    HL_layer_2=HiddenLayer(rng, input=HL_layer_1.output, n_in=hidden_size[0], n_out=hidden_size[0], W=drop_HL_layer_2_W, b=HL_layer_2_b, activation=T.nnet.relu)
+    LR_input_size=HL_layer_1_input_size+2*hidden_size[0]
+    U_a = create_ensemble_para(rng, 3, LR_input_size) # the weight matrix hidden_size*2
+    drop_U_a = dropout_layer(first_srng, U_a, drop_p, train_flag)
+    LR_b = theano.shared(value=np.zeros((3,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class
+    LR_para=[U_a, LR_b]
+    LR_input=T.tanh(T.concatenate([HL_layer_1_input, HL_layer_1.output, HL_layer_2.output],axis=1))
+    layer_LR=LogisticRegression(rng, input=LR_input, n_in=LR_input_size, n_out=3, W=drop_U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
+    '''
+    the second classifier
+    '''
+    conv_layer_2_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_l,
+             mask_matrix = sents_mask_l,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_conv_W_1_pre_2, b=conv_b_1_pre_2,
+             W_gate =drop_conv_W_1_gate_2, b_gate=conv_b_1_gate_2 )
+    conv_layer_2_gate_r = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_r,
+             mask_matrix = sents_mask_r,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_conv_W_1_pre_2, b=conv_b_1_pre_2,
+             W_gate =drop_conv_W_1_gate_2, b_gate=conv_b_1_gate_2 )
+
+    l_input_4_att_2 = conv_layer_2_gate_l.output_tensor3#conv_layer_2_gate_l.masked_conv_out_sigmoid*conv_layer_2_pre_l.masked_conv_out+(1.0-conv_layer_2_gate_l.masked_conv_out_sigmoid)*common_input_l
+    r_input_4_att_2 = conv_layer_2_gate_r.output_tensor3#conv_layer_2_gate_r.masked_conv_out_sigmoid*conv_layer_2_pre_r.masked_conv_out+(1.0-conv_layer_2_gate_r.masked_conv_out_sigmoid)*common_input_r
+
+    conv_layer_2 = Conv_for_Pair(rng,
+            origin_input_tensor3=common_input_l,
+            origin_input_tensor3_r = common_input_r,
+            input_tensor3=l_input_4_att_2,
+            input_tensor3_r = r_input_4_att_2,
+             mask_matrix = sents_mask_l,
+             mask_matrix_r = sents_mask_r,
+             image_shape=(batch_size, 1, hidden_size[0], maxSentLen),
+             image_shape_r = (batch_size, 1, hidden_size[0], maxSentLen),
+             filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size),
+             filter_shape_context=(hidden_size[1], 1,hidden_size[0], 1),
+             W=drop_conv_W_1_2, b=conv_b_1_2,
+             W_context=drop_conv_W_1_context_2, b_context=conv_b_1_context_2)
+    biased_attentive_sent_emb_l_2 = conv_layer_2.attentive_maxpool_vec_l
+    biased_attentive_sent_emb_r_2 = conv_layer_2.attentive_maxpool_vec_r
+
+    HL_layer_3_input = T.concatenate([biased_attentive_sent_emb_l_2,biased_attentive_sent_emb_r_2, biased_attentive_sent_emb_l_2*biased_attentive_sent_emb_r_2],axis=1)
+    HL_layer_3_input_size = hidden_size[1]*3#+extra_size#+(maxSentLen*2+10*2)#+hidden_size[1]*3+1
+
+    HL_layer_3_W, HL_layer_3_b = create_HiddenLayer_para(rng, HL_layer_3_input_size, hidden_size[0])
+    HL_layer_3_params = [HL_layer_3_W, HL_layer_3_b]
+    drop_HL_layer_3_W = dropout_layer(first_srng, HL_layer_3_W, drop_p, train_flag)
+    HL_layer_3=HiddenLayer(rng, input=HL_layer_3_input, n_in=HL_layer_3_input_size, n_out=hidden_size[0], W=drop_HL_layer_3_W, b=HL_layer_3_b, activation=T.nnet.relu)
+
+    HL_layer_4_W, HL_layer_4_b = create_HiddenLayer_para(rng, hidden_size[0], hidden_size[0])
+    HL_layer_4_params = [HL_layer_4_W, HL_layer_4_b]
+    drop_HL_layer_4_W = dropout_layer(first_srng, HL_layer_4_W, drop_p, train_flag)
+    HL_layer_4=HiddenLayer(rng, input=HL_layer_3.output, n_in=hidden_size[0], n_out=hidden_size[0], W=drop_HL_layer_4_W, b=HL_layer_4_b, activation=T.nnet.relu)
+    LR2_input_size=HL_layer_3_input_size+2*hidden_size[0]
+    U2_a = create_ensemble_para(rng, 3, LR2_input_size) # the weight matrix hidden_size*2
+    drop_U2_a = dropout_layer(first_srng, U2_a, drop_p, train_flag)
+    LR2_b = theano.shared(value=np.zeros((3,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class
+    LR2_para=[U2_a, LR2_b]
+    LR2_input=T.tanh(T.concatenate([HL_layer_3_input, HL_layer_3.output, HL_layer_4.output],axis=1))
+    layer_LR2=LogisticRegression(rng, input=LR2_input, n_in=LR2_input_size, n_out=3, W=drop_U2_a, b=LR2_b) #basically it is a multiplication between weight matrix and input feature vector
+
+    '''
+    the third classifier
+    '''
+    conv_layer_3_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_l,
+             mask_matrix = sents_mask_l,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_conv_W_1_pre_3, b=conv_b_1_pre_3,
+             W_gate =drop_conv_W_1_gate_3, b_gate=conv_b_1_gate_3 )
+    conv_layer_3_gate_r = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_r,
+             mask_matrix = sents_mask_r,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_conv_W_1_pre_3, b=conv_b_1_pre_3,
+             W_gate =drop_conv_W_1_gate_3, b_gate=conv_b_1_gate_3)
+
+    l_input_4_att_3 = conv_layer_3_gate_l.output_tensor3#conv_layer_2_gate_l.masked_conv_out_sigmoid*conv_layer_2_pre_l.masked_conv_out+(1.0-conv_layer_2_gate_l.masked_conv_out_sigmoid)*common_input_l
+    r_input_4_att_3 = conv_layer_3_gate_r.output_tensor3#conv_layer_2_gate_r.masked_conv_out_sigmoid*conv_layer_2_pre_r.masked_conv_out+(1.0-conv_layer_2_gate_r.masked_conv_out_sigmoid)*common_input_r
+
+    conv_layer_3 = Conv_for_Pair(rng,
+            origin_input_tensor3=common_input_l,
+            origin_input_tensor3_r = common_input_r,
+            input_tensor3=l_input_4_att_3,
+            input_tensor3_r = r_input_4_att_3,
+             mask_matrix = sents_mask_l,
+             mask_matrix_r = sents_mask_r,
+             image_shape=(batch_size, 1, hidden_size[0], maxSentLen),
+             image_shape_r = (batch_size, 1, hidden_size[0], maxSentLen),
+             filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size),
+             filter_shape_context=(hidden_size[1], 1,hidden_size[0], 1),
+             W=drop_conv_W_1_3, b=conv_b_1_3,
+             W_context=drop_conv_W_1_context_3, b_context=conv_b_1_context_3)
+    biased_attentive_sent_emb_l_3 = conv_layer_3.biased_attentive_maxpool_vec_l
+    biased_attentive_sent_emb_r_3 = conv_layer_3.biased_attentive_maxpool_vec_r
+
+    HL_layer_5_input = T.concatenate([biased_attentive_sent_emb_l_3,biased_attentive_sent_emb_r_3, biased_attentive_sent_emb_l_3*biased_attentive_sent_emb_r_3],axis=1)
+    HL_layer_5_input_size = hidden_size[1]*3#+extra_size#+(maxSentLen*2+10*2)#+hidden_size[1]*3+1
+
+    HL_layer_5_W, HL_layer_5_b = create_HiddenLayer_para(rng, HL_layer_5_input_size, hidden_size[0])
+    HL_layer_5_params = [HL_layer_5_W, HL_layer_5_b]
+    drop_HL_layer_5_W = dropout_layer(first_srng, HL_layer_5_W, drop_p, train_flag)
+    HL_layer_5=HiddenLayer(rng, input=HL_layer_5_input, n_in=HL_layer_5_input_size, n_out=hidden_size[0], W=drop_HL_layer_5_W, b=HL_layer_5_b, activation=T.nnet.relu)
+
+    HL_layer_6_W, HL_layer_6_b = create_HiddenLayer_para(rng, hidden_size[0], hidden_size[0])
+    HL_layer_6_params = [HL_layer_6_W, HL_layer_6_b]
+    drop_HL_layer_6_W = dropout_layer(first_srng, HL_layer_6_W, drop_p, train_flag)
+    HL_layer_6=HiddenLayer(rng, input=HL_layer_5.output, n_in=hidden_size[0], n_out=hidden_size[0], W=drop_HL_layer_6_W, b=HL_layer_6_b, activation=T.nnet.relu)
+    LR3_input_size=HL_layer_5_input_size+2*hidden_size[0]
+    U3_a = create_ensemble_para(rng, 3, LR3_input_size) # the weight matrix hidden_size*2
+    drop_U3_a = dropout_layer(first_srng, U3_a, drop_p, train_flag)
+    LR3_b = theano.shared(value=np.zeros((3,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class
+    LR3_para=[U3_a, LR3_b]
+    LR3_input=T.tanh(T.concatenate([HL_layer_5_input, HL_layer_5.output, HL_layer_6.output],axis=1))
+    layer_LR3=LogisticRegression(rng, input=LR3_input, n_in=LR3_input_size, n_out=3, W=drop_U3_a, b=LR3_b) #basically it is a multiplication between weight matrix and input feature vector
+
+    '''
+    the fourth classifier
+    '''
+    conv_layer_4_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_l,
+             mask_matrix = sents_mask_l,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_conv_W_1_pre_4, b=conv_b_1_pre_4,
+             W_gate =drop_conv_W_1_gate_4, b_gate=conv_b_1_gate_4 )
+    conv_layer_4_gate_r = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_r,
+             mask_matrix = sents_mask_r,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_conv_W_1_pre_4, b=conv_b_1_pre_4,
+             W_gate =drop_conv_W_1_gate_4, b_gate=conv_b_1_gate_4)
+
+    l_input_4_att_4 = conv_layer_4_gate_l.output_tensor3#conv_layer_2_gate_l.masked_conv_out_sigmoid*conv_layer_2_pre_l.masked_conv_out+(1.0-conv_layer_2_gate_l.masked_conv_out_sigmoid)*common_input_l
+    r_input_4_att_4 = conv_layer_4_gate_r.output_tensor3#conv_layer_2_gate_r.masked_conv_out_sigmoid*conv_layer_2_pre_r.masked_conv_out+(1.0-conv_layer_2_gate_r.masked_conv_out_sigmoid)*common_input_r
+
+    conv_layer_4 = Conv_for_Pair(rng,
+            origin_input_tensor3=common_input_l,
+            origin_input_tensor3_r = common_input_r,
+            input_tensor3=l_input_4_att_4,
+            input_tensor3_r = r_input_4_att_4,
+             mask_matrix = sents_mask_l,
+             mask_matrix_r = sents_mask_r,
+             image_shape=(batch_size, 1, hidden_size[0], maxSentLen),
+             image_shape_r = (batch_size, 1, hidden_size[0], maxSentLen),
+             filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size),
+             filter_shape_context=(hidden_size[1], 1,hidden_size[0], 1),
+             W=drop_conv_W_1_4, b=conv_b_1_4,
+             W_context=drop_conv_W_1_context_4, b_context=conv_b_1_context_4)
+    biased_attentive_sent_emb_l_4 = conv_layer_4.attentive_maxpool_vec_l
+    biased_attentive_sent_emb_r_4 = conv_layer_4.attentive_maxpool_vec_r
+
+    HL_layer_7_input = T.concatenate([biased_attentive_sent_emb_l_4,biased_attentive_sent_emb_r_4, biased_attentive_sent_emb_l_4*biased_attentive_sent_emb_r_4],axis=1)
+    HL_layer_7_input_size = hidden_size[1]*3#+extra_size#+(maxSentLen*2+10*2)#+hidden_size[1]*3+1
+
+    HL_layer_7_W, HL_layer_7_b = create_HiddenLayer_para(rng, HL_layer_7_input_size, hidden_size[0])
+    HL_layer_7_params = [HL_layer_7_W, HL_layer_7_b]
+    drop_HL_layer_7_W = dropout_layer(first_srng, HL_layer_7_W, drop_p, train_flag)
+    HL_layer_7=HiddenLayer(rng, input=HL_layer_7_input, n_in=HL_layer_7_input_size, n_out=hidden_size[0], W=drop_HL_layer_7_W, b=HL_layer_7_b, activation=T.nnet.relu)
+
+    HL_layer_8_W, HL_layer_8_b = create_HiddenLayer_para(rng, hidden_size[0], hidden_size[0])
+    HL_layer_8_params = [HL_layer_8_W, HL_layer_8_b]
+    drop_HL_layer_8_W = dropout_layer(first_srng, HL_layer_8_W, drop_p, train_flag)
+    HL_layer_8=HiddenLayer(rng, input=HL_layer_7.output, n_in=hidden_size[0], n_out=hidden_size[0], W=drop_HL_layer_8_W, b=HL_layer_8_b, activation=T.nnet.relu)
+    LR4_input_size=HL_layer_7_input_size+2*hidden_size[0]
+    U4_a = create_ensemble_para(rng, 3, LR4_input_size) # the weight matrix hidden_size*2
+    drop_U4_a = dropout_layer(first_srng, U4_a, drop_p, train_flag)
+    LR4_b = theano.shared(value=np.zeros((3,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class
+    LR4_para=[U4_a, LR4_b]
+    LR4_input=T.tanh(T.concatenate([HL_layer_7_input, HL_layer_7.output, HL_layer_8.output],axis=1))
+    layer_LR4=LogisticRegression(rng, input=LR4_input, n_in=LR4_input_size, n_out=3, W=drop_U4_a, b=LR4_b) #basically it is a multiplication between weight matrix and input feature vector
+
+    loss_0=(layer_LR.negative_log_likelihood(labels)+layer_LR2.negative_log_likelihood(labels)+layer_LR3.negative_log_likelihood(labels)+layer_LR4.negative_log_likelihood(labels))/4.0  #for classification task, we usually used negative log likelihood as loss, the lower the better.
+    para_0 = LR_para+HL_layer_1_params+HL_layer_2_params+LR2_para+HL_layer_3_params+HL_layer_4_params +LR3_para+HL_layer_5_params+HL_layer_6_params +LR4_para+HL_layer_7_params+HL_layer_8_params
+
+
+#         loss = loss_0+loss_1+loss_2
+    batch_distr = layer_LR.p_y_given_x+layer_LR2.p_y_given_x+layer_LR3.p_y_given_x+layer_LR4.p_y_given_x#T.sum((layer_LR.p_y_given_x).reshape((batch_size, multi_psp_size,3)), axis=1)  #(batch, 3)
+    batch_error = (layer_LR.errors(labels)+layer_LR2.errors(labels)+layer_LR3.errors(labels)+layer_LR4.errors(labels))/4.0
+
+    return loss_0, para_0, batch_distr,batch_error
+
+def maskMatrix_to_posiMatrix(mask):
+    def vec(vector):
+        summ = T.cast(T.sum(vector), 'int32')
+        new_vec = T.concatenate([T.zeros((vector.shape[0]-summ,)), (T.arange(summ)+1)*1.0/summ], axis=0)
+        return new_vec
+
+    results, _ = theano.scan(fn=vec,sequences=mask)
+    return T.cast(results, 'float32')
+
+def one_classifier_in_one_copy(rng, common_input_l,common_input_r,sents_mask_l,sents_mask_r,batch_size, emb_size,maxSentLen,gate_filter_shape,phrase_filter_shape,
+                               hidden_size,filter_size,first_srng, drop_p,train_flag,labels,
+                               drop_conv_W_1_pre,conv_b_1_pre,drop_conv_W_1_gate,conv_b_1_gate,
+                               drop_conv_W_phrase, drop_conv_b_phrase,
+                               drop_conv_W_1,conv_b_1,drop_conv_W_1_context,conv_b_1_context,
+                               biased):
+    conv_layer_1_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_l,
+             mask_matrix = sents_mask_l,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_conv_W_1_pre, b=conv_b_1_pre,
+             W_gate =drop_conv_W_1_gate, b_gate=conv_b_1_gate )
+    conv_layer_1_gate_r = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input_r,
+             mask_matrix = sents_mask_r,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=gate_filter_shape,
+             W=drop_conv_W_1_pre, b=conv_b_1_pre,
+             W_gate =drop_conv_W_1_gate, b_gate=conv_b_1_gate )
+    #phrase
+    phrase_layer_l = Conv_with_Mask(rng, input_tensor3=conv_layer_1_gate_l.output_tensor3,
+             mask_matrix = sents_mask_l,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=phrase_filter_shape, W=drop_conv_W_phrase, b=drop_conv_b_phrase)
+    phrase_layer_r = Conv_with_Mask(rng, input_tensor3=conv_layer_1_gate_r.output_tensor3,
+             mask_matrix = sents_mask_r,
+             image_shape=(batch_size, 1, emb_size, maxSentLen),
+             filter_shape=phrase_filter_shape, W=drop_conv_W_phrase, b=drop_conv_b_phrase)
+    
+    concate_word_phrase_tensor3_l = T.concatenate([phrase_layer_l.masked_conv_out, conv_layer_1_gate_l.output_tensor3], axis=1) #(batch, phrasehidden+hidden, l_len)
+    concate_word_phrase_tensor3_r = T.concatenate([phrase_layer_r.masked_conv_out, conv_layer_1_gate_r.output_tensor3], axis=1) #(batch, phrasehidden+hidden, r_len)
+
+    drop_l_input_4_att = dropout_layer(first_srng, concate_word_phrase_tensor3_l, drop_p, train_flag)#conv_layer_2_gate_l.masked_conv_out_sigmoid*conv_layer_2_pre_l.masked_conv_out+(1.0-conv_layer_2_gate_l.masked_conv_out_sigmoid)*common_input_l
+    drop_r_input_4_att = dropout_layer(first_srng,concate_word_phrase_tensor3_r, drop_p, train_flag)#conv_layer_2_gate_r.masked_conv_out_sigmoid*conv_layer_2_pre_r.masked_conv_out+(1.0-conv_layer_2_gate_r.masked_conv_out_sigmoid)*common_input_r
+
+    conv_layer_1 = Conv_for_Pair(rng,
+            origin_input_tensor3=common_input_l,
+            origin_input_tensor3_r = common_input_r,
+            input_tensor3=drop_l_input_4_att,
+            input_tensor3_r = drop_r_input_4_att,
+             mask_matrix = sents_mask_l,
+             mask_matrix_r = sents_mask_r,
+             image_shape=(batch_size, 1, hidden_size[0], maxSentLen),
+             image_shape_r = (batch_size, 1, hidden_size[0], maxSentLen),
+             image_shape_context = (batch_size, 1, hidden_size[0]+phrase_filter_shape[0], maxSentLen),
+             image_shape_context_r = (batch_size, 1, hidden_size[0]+phrase_filter_shape[0], maxSentLen),
+             filter_shape=(hidden_size[1], 1, hidden_size[0], filter_size[0]),
+             filter_shape_context=(hidden_size[1], 1,hidden_size[0]+phrase_filter_shape[0], 1),
+             W=drop_conv_W_1, b=conv_b_1,
+             W_context=drop_conv_W_1_context, b_context=conv_b_1_context)
+
+#         attentive_sent_emb_l = conv_layer_1.attentive_maxpool_vec_l
+#         attentive_sent_emb_r = conv_layer_1.attentive_maxpool_vec_r
+    if biased:
+        biased_attentive_sent_emb_l = dropout_layer(first_srng, conv_layer_1.biased_attentive_maxpool_vec_l, drop_p, train_flag)
+        biased_attentive_sent_emb_r = dropout_layer(first_srng, conv_layer_1.biased_attentive_maxpool_vec_r, drop_p, train_flag)
+    else:
+        biased_attentive_sent_emb_l = dropout_layer(first_srng, conv_layer_1.attentive_maxpool_vec_l, drop_p, train_flag)
+        biased_attentive_sent_emb_r = dropout_layer(first_srng, conv_layer_1.attentive_maxpool_vec_r, drop_p, train_flag)
+
+#         cos = cosine_matrix1_matrix2_rowwise(attentive_sent_emb_l,attentive_sent_emb_r).dimshuffle(0,'x')
+#         euc = 1.0/(1.0+T.sqrt(1e-20+T.sum((attentive_sent_emb_l-attentive_sent_emb_r)**2, axis=1))).dimshuffle(0,'x')
+#         euc_sum = 1.0/(1.0+T.sqrt(1e-20+T.sum((conv_layer_1.attentive_sumpool_vec_l-conv_layer_1.attentive_sumpool_vec_r)**2, axis=1))).dimshuffle(0,'x')
+
+    HL_layer_1_input = T.concatenate([biased_attentive_sent_emb_l,biased_attentive_sent_emb_r, biased_attentive_sent_emb_l*biased_attentive_sent_emb_r],axis=1)
+    HL_layer_1_input_size = hidden_size[1]*3#+extra_size#+(maxSentLen*2+10*2)#+hidden_size[1]*3+1
+
+    HL_layer_1_W, HL_layer_1_b = create_HiddenLayer_para(rng, HL_layer_1_input_size, hidden_size[0])
+    HL_layer_1_params = [HL_layer_1_W, HL_layer_1_b]
+    
+    HL_layer_1=HiddenLayer(rng, input=HL_layer_1_input, n_in=HL_layer_1_input_size, n_out=hidden_size[0], W=HL_layer_1_W, b=HL_layer_1_b, activation=T.nnet.relu)
+    HL_layer_1_output = dropout_layer(first_srng, HL_layer_1.output, drop_p, train_flag)
+    
+    HL_layer_2_W, HL_layer_2_b = create_HiddenLayer_para(rng, hidden_size[0], hidden_size[0])
+    HL_layer_2_params = [HL_layer_2_W, HL_layer_2_b]
+    
+    
+    HL_layer_2=HiddenLayer(rng, input=HL_layer_1_output, n_in=hidden_size[0], n_out=hidden_size[0], W=HL_layer_2_W, b=HL_layer_2_b, activation=T.nnet.relu)
+    HL_layer_2_output = dropout_layer(first_srng, HL_layer_2.output, drop_p, train_flag)
+    
+    
+    LR_input=T.tanh(T.concatenate([HL_layer_1_input, HL_layer_1_output, HL_layer_2_output],axis=1))
+    LR_input_size=HL_layer_1_input_size+2*hidden_size[0]
+    U_a = create_ensemble_para(rng, 3, LR_input_size) # the weight matrix hidden_size*2
+    LR_b = theano.shared(value=np.zeros((3,),dtype=theano.config.floatX),name='LR_b', borrow=True)  #bias for each target class
+    LR_para=[U_a, LR_b]
+    
+    layer_LR=LogisticRegression(rng, input=LR_input, n_in=LR_input_size, n_out=3, W=U_a, b=LR_b) #basically it is a multiplication between weight matrix and input feature vector
+
+    loss = layer_LR.negative_log_likelihood(labels)
+    distr = layer_LR.p_y_given_x
+    params = LR_para+HL_layer_1_params+HL_layer_2_params
+    return loss, distr, params
