@@ -18,7 +18,7 @@ from mlp import HiddenLayer
 
 from load_data import load_sentiment_dataset, load_word2vec_file, load_word2vec_to_init
 from common_functions import Conv_with_Mask_with_Gate,Conv_for_Pair_SoftAttend,dropout_layer,create_conv_para, Conv_for_Pair,Conv_with_Mask, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_HiddenLayer_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
-def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.000001, drop_p=0.05, emb_size=300, hidden_size = 300, batch_size=5, filter_size=[3,5], maxSentLen=60, comment='softatt, both att and att-free'):
+def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.000001, drop_p=0.05, emb_size=300, hidden_size = 400, batch_size=5, filter_size=[3,5,7], maxSentLen=60, comment='hidden 400'):
 
     model_options = locals().copy()
     print "model options", model_options
@@ -86,9 +86,18 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.000001, drop_p
     soft_att_W_small, _ = create_HiddenLayer_para(rng, emb_size, 1)
     soft_att_W2_big, soft_att_b2_big = create_HiddenLayer_para(rng, emb_size*2, emb_size)
     soft_att_W2_small, _ = create_HiddenLayer_para(rng, emb_size, 1)
-    NN_para=[conv_W_2_pre, conv_b_2_pre,conv_W_2_gate, conv_b_2_gate,conv_W, conv_b,conv_W_context,conv_W2, conv_b2,conv_W2_context,
+
+#     soft_att_W3_big, soft_att_b3_big = create_HiddenLayer_para(rng, emb_size*2, emb_size)
+#     soft_att_W3_small, _ = create_HiddenLayer_para(rng, emb_size, 1)
+    
+    NN_para=[conv_W_2_pre, conv_b_2_pre,conv_W_2_gate, conv_b_2_gate,
+             conv_W, conv_b,conv_W_context,
+             conv_W2, conv_b2,conv_W2_context,
+#              conv_W3, conv_b3,conv_W3_context,
              soft_att_W_big, soft_att_b_big,soft_att_W_small,
-             soft_att_W2_big, soft_att_b2_big,soft_att_W2_small]#,conv_W3, conv_b3,conv_W3_context]
+             soft_att_W2_big, soft_att_b2_big,soft_att_W2_small
+#              soft_att_W3_big, soft_att_b3_big,soft_att_W3_small
+             ]#,conv_W3, conv_b3,conv_W3_context]
 
     conv_layer_1_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input,
              mask_matrix = sents_mask,
@@ -161,31 +170,38 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.000001, drop_p
                                                soft_att_W_big=soft_att_W2_big, soft_att_b_big=soft_att_b2_big,
                                                soft_att_W_small=soft_att_W2_small)
 
-#     conv_layer_3_pair = Conv_for_Pair(rng,
-#             origin_input_tensor3=advanced_sent_tensor3,
-#             origin_input_tensor3_r = advanced_sent_tensor3,
-#             input_tensor3=advanced_sent_tensor3,
-#             input_tensor3_r = advanced_sent_tensor3,
-#              mask_matrix = sents_mask,
-#              mask_matrix_r = sents_mask,
-#              image_shape=(batch_size, 1, emb_size, maxSentLen),
-#              image_shape_r = (batch_size, 1, emb_size, maxSentLen),
-#              filter_shape=(hidden_size, 1, emb_size, filter_size[2]),
-#              filter_shape_context=(hidden_size, 1, emb_size, 1),
-#              W=conv_W3, b=conv_b3,
-#              W_context=conv_W3_context, b_context=conv_b3_context)
+#     conv_layer_3_pair = Conv_for_Pair_SoftAttend(rng, 
+#                                                origin_input_tensor3=advanced_sent_tensor3, 
+#                                                origin_input_tensor3_r=advanced_sent_tensor3, 
+#                                                input_tensor3=advanced_sent_tensor3, 
+#                                                input_tensor3_r=advanced_sent_tensor3, 
+#                                                mask_matrix=sents_mask, 
+#                                                mask_matrix_r=sents_mask,
+#                                                filter_shape=(hidden_size, 1, emb_size, filter_size[2]),
+#                                                filter_shape_context=(hidden_size, 1, emb_size, 1),
+#                                                image_shape=(batch_size, 1, emb_size, maxSentLen), 
+#                                                image_shape_r= (batch_size, 1, emb_size, maxSentLen),
+#                                                W=conv_W3, b=conv_b3,
+#                                                W_context=conv_W3_context, b_context=conv_b3_context,
+#                                                soft_att_W_big=soft_att_W3_big, soft_att_b_big=soft_att_b3_big,
+#                                                soft_att_W_small=soft_att_W3_small)
 
     # biased_sent_embeddings = conv_layer_pair.biased_attentive_maxpool_vec_l
     sent_embeddings = conv_layer_pair.maxpool_vec_l
-    sent_embeddings_2 = conv_layer_2_pair.maxpool_vec_l
     att_sent_embeddings = conv_layer_pair.attentive_maxpool_vec_l
+    
+    sent_embeddings_2 = conv_layer_2_pair.maxpool_vec_l
     att_sent_embeddings_2 = conv_layer_2_pair.attentive_maxpool_vec_l
-#     sent_embeddings_3 = conv_layer_3_pair.attentive_maxpool_vec_l
+#     att_sent_embeddings_3 = conv_layer_3_pair.attentive_maxpool_vec_l
 
 
 
     #classification layer, it is just mapping from a feature vector of size "hidden_size" to a vector of only two values: positive, negative
-    HL_input = T.concatenate([bow,sent_embeddings, sent_embeddings_2, att_sent_embeddings, att_sent_embeddings_2], axis=1)
+    HL_input = T.concatenate([bow,
+                              sent_embeddings, att_sent_embeddings, 
+                              sent_embeddings_2, att_sent_embeddings_2
+#                               sent_embeddings_3,att_sent_embeddings_3,
+                              ], axis=1)
     HL_input_size = hidden_size*4+emb_size
 
     HL_layer_1_W, HL_layer_1_b = create_HiddenLayer_para(rng, HL_input_size, hidden_size)
