@@ -16,9 +16,9 @@ from theano.tensor.signal import downsample
 from random import shuffle
 from mlp import HiddenLayer
 
-from load_data import load_sentiment_dataset, load_word2vec, load_word2vec_to_init
+from load_data import load_sentiment_dataset, load_word2vec_file, load_word2vec_to_init
 from common_functions import Conv_with_Mask_with_Gate,dropout_layer,create_conv_para, Conv_for_Pair,Conv_with_Mask, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_HiddenLayer_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
-def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.001, drop_p=0.0, emb_size=300, batch_size=5, filter_size=[3,5], maxSentLen=60, comment='acnn, multichannel'):
+def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.001, drop_p=0.0, emb_size=300, batch_size=5, filter_size=[3,5], maxSentLen=60, comment='glove.840B.300d.txt'):
     hidden_size=emb_size
     model_options = locals().copy()
     print "model options", model_options
@@ -47,7 +47,7 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.001, drop_p=0.
     #here, we leave code for loading word2vec to initialize words
     rand_values[0]=np.array(np.zeros(emb_size),dtype=theano.config.floatX)
     id2word = {y:x for x,y in word2id.iteritems()}
-    word2vec=load_word2vec()
+    word2vec=load_word2vec_file('glove.840B.300d.txt')
     rand_values=load_word2vec_to_init(rand_values, id2word, word2vec)
     embeddings=theano.shared(value=np.array(rand_values,dtype=theano.config.floatX), borrow=True)   #wrap up the python variable "rand_values" into theano variable
 
