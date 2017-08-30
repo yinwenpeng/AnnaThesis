@@ -18,7 +18,7 @@ from mlp import HiddenLayer
 
 from load_data import load_sentiment_dataset, load_word2vec_file, load_word2vec_to_init
 from common_functions import Conv_with_Mask_with_Gate,Conv_for_Pair_SoftAttend,dropout_layer,create_conv_para, Conv_for_Pair,Conv_with_Mask, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_HiddenLayer_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
-def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.000001, drop_p=0.05, emb_size=300, hidden_size = 400, batch_size=5, filter_size=[3,5,7], maxSentLen=60, comment='hidden 400'):
+def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.000001, drop_p=0.05, emb_size=300, hidden_size = 500, batch_size=5, filter_size=[3,5,7], maxSentLen=60, comment='hidden 500'):
 
     model_options = locals().copy()
     print "model options", model_options
