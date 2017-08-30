@@ -17,9 +17,9 @@ from random import shuffle
 from mlp import HiddenLayer
 
 from load_data import load_sentiment_dataset, load_word2vec_file, load_word2vec_to_init
-from common_functions import Conv_with_Mask_with_Gate,dropout_layer,create_conv_para, Conv_for_Pair,Conv_with_Mask, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_HiddenLayer_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
-def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.001, drop_p=0.0, emb_size=300, batch_size=5, filter_size=[3,5], maxSentLen=60, comment='glove.840B.300d.txt'):
-    hidden_size=emb_size
+from common_functions import Conv_with_Mask_with_Gate,Conv_for_Pair_SoftAttend,dropout_layer,create_conv_para, Conv_for_Pair,Conv_with_Mask, LSTM_Batch_Tensor_Input_with_Mask, create_ensemble_para, L2norm_paraList, Diversify_Reg, create_HiddenLayer_para, GRU_Batch_Tensor_Input_with_Mask, create_LSTM_para
+def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.000001, drop_p=0.05, emb_size=300, hidden_size = 300, batch_size=5, filter_size=[3,5], maxSentLen=60, comment='softatt, both att and att-free'):
+
     model_options = locals().copy()
     print "model options", model_options
 
@@ -64,23 +64,33 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.001, drop_p=0.
 
     common_input=embeddings[sents_id_matrix.flatten()].reshape((batch_size,maxSentLen, emb_size)).dimshuffle(0,2,1) #the input format can be adapted into CNN or GRU or LSTM
 
-    drop_common_input = dropout_layer(srng, common_input, drop_p, train_flag)
+#     drop_common_input = dropout_layer(srng, common_input, drop_p, train_flag)
 
 
-    bow = T.sum(drop_common_input*sents_mask.dimshuffle(0,'x',1), axis=2) #(batch, emb_size)
+    bow = T.sum(common_input*sents_mask.dimshuffle(0,'x',1), axis=2) #(batch, emb_size)
 
-    gate_filter_shape=(hidden_size, 1, emb_size, 1)
+    gate_filter_shape=(emb_size, 1, emb_size, 1)
     conv_W_2_pre, conv_b_2_pre=create_conv_para(rng, filter_shape=gate_filter_shape)
     conv_W_2_gate, conv_b_2_gate=create_conv_para(rng, filter_shape=gate_filter_shape)
+    
     conv_W, conv_b=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, filter_size[0]))
     conv_W_context, conv_b_context=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, 1))
 
     conv_W2, conv_b2=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, filter_size[1]))
     conv_W2_context, conv_b2_context=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, 1))
+    
+#     conv_W3, conv_b3=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, filter_size[2]))
+#     conv_W3_context, conv_b3_context=create_conv_para(rng, filter_shape=(hidden_size, 1, emb_size, 1))
     # conv_W_into_matrix=conv_W.reshape((conv_W.shape[0], conv_W.shape[2]*conv_W.shape[3]))
-    NN_para=[conv_W_2_pre, conv_b_2_pre,conv_W_2_gate, conv_b_2_gate,conv_W, conv_b,conv_W_context,conv_W2, conv_b2,conv_W2_context]
+    soft_att_W_big, soft_att_b_big = create_HiddenLayer_para(rng, emb_size*2, emb_size)
+    soft_att_W_small, _ = create_HiddenLayer_para(rng, emb_size, 1)
+    soft_att_W2_big, soft_att_b2_big = create_HiddenLayer_para(rng, emb_size*2, emb_size)
+    soft_att_W2_small, _ = create_HiddenLayer_para(rng, emb_size, 1)
+    NN_para=[conv_W_2_pre, conv_b_2_pre,conv_W_2_gate, conv_b_2_gate,conv_W, conv_b,conv_W_context,conv_W2, conv_b2,conv_W2_context,
+             soft_att_W_big, soft_att_b_big,soft_att_W_small,
+             soft_att_W2_big, soft_att_b2_big,soft_att_W2_small]#,conv_W3, conv_b3,conv_W3_context]
 
-    conv_layer_1_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=drop_common_input,
+    conv_layer_1_gate_l = Conv_with_Mask_with_Gate(rng, input_tensor3=common_input,
              mask_matrix = sents_mask,
              image_shape=(batch_size, 1, emb_size, maxSentLen),
              filter_shape=gate_filter_shape,
@@ -89,55 +99,107 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.001, drop_p=0.
 
     advanced_sent_tensor3 = conv_layer_1_gate_l.output_tensor3
 
-    conv_layer_pair = Conv_for_Pair(rng,
-            origin_input_tensor3=advanced_sent_tensor3,
-            origin_input_tensor3_r = advanced_sent_tensor3,
-            input_tensor3=advanced_sent_tensor3,
-            input_tensor3_r = advanced_sent_tensor3,
-             mask_matrix = sents_mask,
-             mask_matrix_r = sents_mask,
-             image_shape=(batch_size, 1, emb_size, maxSentLen),
-             image_shape_r = (batch_size, 1, emb_size, maxSentLen),
-             filter_shape=(hidden_size, 1, emb_size, filter_size[0]),
-             filter_shape_context=(hidden_size, 1, emb_size, 1),
-             W=conv_W, b=conv_b,
-             W_context=conv_W_context, b_context=conv_b_context)
+#     conv_layer_pair = Conv_for_Pair(rng,
+#             origin_input_tensor3=advanced_sent_tensor3,
+#             origin_input_tensor3_r = advanced_sent_tensor3,
+#             input_tensor3=advanced_sent_tensor3,
+#             input_tensor3_r = advanced_sent_tensor3,
+#              mask_matrix = sents_mask,
+#              mask_matrix_r = sents_mask,
+#              image_shape=(batch_size, 1, emb_size, maxSentLen),
+#              image_shape_r = (batch_size, 1, emb_size, maxSentLen),
+#              filter_shape=(hidden_size, 1, emb_size, filter_size[0]),
+#              filter_shape_context=(hidden_size, 1, emb_size, 1),
+#              W=conv_W, b=conv_b,
+#              W_context=conv_W_context, b_context=conv_b_context)
 
-    conv_layer_2_pair = Conv_for_Pair(rng,
-            origin_input_tensor3=advanced_sent_tensor3,
-            origin_input_tensor3_r = advanced_sent_tensor3,
-            input_tensor3=advanced_sent_tensor3,
-            input_tensor3_r = advanced_sent_tensor3,
-             mask_matrix = sents_mask,
-             mask_matrix_r = sents_mask,
-             image_shape=(batch_size, 1, emb_size, maxSentLen),
-             image_shape_r = (batch_size, 1, emb_size, maxSentLen),
-             filter_shape=(hidden_size, 1, emb_size, filter_size[1]),
-             filter_shape_context=(hidden_size, 1, emb_size, 1),
-             W=conv_W2, b=conv_b2,
-             W_context=conv_W2_context, b_context=conv_b2_context)
+    conv_layer_pair = Conv_for_Pair_SoftAttend(rng, 
+                                               origin_input_tensor3=advanced_sent_tensor3, 
+                                               origin_input_tensor3_r=advanced_sent_tensor3, 
+                                               input_tensor3=advanced_sent_tensor3, 
+                                               input_tensor3_r=advanced_sent_tensor3, 
+                                               mask_matrix=sents_mask, 
+                                               mask_matrix_r=sents_mask,
+                                               filter_shape=(hidden_size, 1, emb_size, filter_size[0]),
+                                               filter_shape_context=(hidden_size, 1, emb_size, 1),
+                                               image_shape=(batch_size, 1, emb_size, maxSentLen), 
+                                               image_shape_r= (batch_size, 1, emb_size, maxSentLen),
+                                               W=conv_W, b=conv_b,
+                                               W_context=conv_W_context, b_context=conv_b_context,
+                                               soft_att_W_big=soft_att_W_big, soft_att_b_big=soft_att_b_big,
+                                               soft_att_W_small=soft_att_W_small)
+
+
+
+
+#     conv_layer_2_pair = Conv_for_Pair(rng,
+#             origin_input_tensor3=advanced_sent_tensor3,
+#             origin_input_tensor3_r = advanced_sent_tensor3,
+#             input_tensor3=advanced_sent_tensor3,
+#             input_tensor3_r = advanced_sent_tensor3,
+#              mask_matrix = sents_mask,
+#              mask_matrix_r = sents_mask,
+#              image_shape=(batch_size, 1, emb_size, maxSentLen),
+#              image_shape_r = (batch_size, 1, emb_size, maxSentLen),
+#              filter_shape=(hidden_size, 1, emb_size, filter_size[1]),
+#              filter_shape_context=(hidden_size, 1, emb_size, 1),
+#              W=conv_W2, b=conv_b2,
+#              W_context=conv_W2_context, b_context=conv_b2_context)
+    conv_layer_2_pair = Conv_for_Pair_SoftAttend(rng, 
+                                               origin_input_tensor3=advanced_sent_tensor3, 
+                                               origin_input_tensor3_r=advanced_sent_tensor3, 
+                                               input_tensor3=advanced_sent_tensor3, 
+                                               input_tensor3_r=advanced_sent_tensor3, 
+                                               mask_matrix=sents_mask, 
+                                               mask_matrix_r=sents_mask,
+                                               filter_shape=(hidden_size, 1, emb_size, filter_size[1]),
+                                               filter_shape_context=(hidden_size, 1, emb_size, 1),
+                                               image_shape=(batch_size, 1, emb_size, maxSentLen), 
+                                               image_shape_r= (batch_size, 1, emb_size, maxSentLen),
+                                               W=conv_W2, b=conv_b2,
+                                               W_context=conv_W2_context, b_context=conv_b2_context,
+                                               soft_att_W_big=soft_att_W2_big, soft_att_b_big=soft_att_b2_big,
+                                               soft_att_W_small=soft_att_W2_small)
+
+#     conv_layer_3_pair = Conv_for_Pair(rng,
+#             origin_input_tensor3=advanced_sent_tensor3,
+#             origin_input_tensor3_r = advanced_sent_tensor3,
+#             input_tensor3=advanced_sent_tensor3,
+#             input_tensor3_r = advanced_sent_tensor3,
+#              mask_matrix = sents_mask,
+#              mask_matrix_r = sents_mask,
+#              image_shape=(batch_size, 1, emb_size, maxSentLen),
+#              image_shape_r = (batch_size, 1, emb_size, maxSentLen),
+#              filter_shape=(hidden_size, 1, emb_size, filter_size[2]),
+#              filter_shape_context=(hidden_size, 1, emb_size, 1),
+#              W=conv_W3, b=conv_b3,
+#              W_context=conv_W3_context, b_context=conv_b3_context)
 
     # biased_sent_embeddings = conv_layer_pair.biased_attentive_maxpool_vec_l
-    drop_sent_embeddings = dropout_layer(srng, conv_layer_pair.attentive_maxpool_vec_l, drop_p, train_flag)
-    drop_sent_embeddings_2 = dropout_layer(srng, conv_layer_2_pair.attentive_maxpool_vec_l, drop_p, train_flag)
+    sent_embeddings = conv_layer_pair.maxpool_vec_l
+    sent_embeddings_2 = conv_layer_2_pair.maxpool_vec_l
+    att_sent_embeddings = conv_layer_pair.attentive_maxpool_vec_l
+    att_sent_embeddings_2 = conv_layer_2_pair.attentive_maxpool_vec_l
+#     sent_embeddings_3 = conv_layer_3_pair.attentive_maxpool_vec_l
 
 
 
     #classification layer, it is just mapping from a feature vector of size "hidden_size" to a vector of only two values: positive, negative
-    HL_input = T.concatenate([bow,drop_sent_embeddings, drop_sent_embeddings_2], axis=1)
-    HL_input_size = hidden_size+emb_size*2
+    HL_input = T.concatenate([bow,sent_embeddings, sent_embeddings_2, att_sent_embeddings, att_sent_embeddings_2], axis=1)
+    HL_input_size = hidden_size*4+emb_size
 
     HL_layer_1_W, HL_layer_1_b = create_HiddenLayer_para(rng, HL_input_size, hidden_size)
     HL_layer_1_params = [HL_layer_1_W, HL_layer_1_b]
     HL_layer_1=HiddenLayer(rng, input=HL_input, n_in=HL_input_size, n_out=hidden_size, W=HL_layer_1_W, b=HL_layer_1_b, activation=T.nnet.relu)
-    HL_layer_1_output = dropout_layer(srng, HL_layer_1.output, drop_p, train_flag)
+#     HL_layer_1_output = dropout_layer(srng, HL_layer_1.output, drop_p, train_flag)
 
     HL_layer_2_W, HL_layer_2_b = create_HiddenLayer_para(rng, hidden_size, hidden_size)
     HL_layer_2_params = [HL_layer_2_W, HL_layer_2_b]
-    HL_layer_2=HiddenLayer(rng, input=HL_layer_1_output, n_in=hidden_size, n_out=hidden_size, W=HL_layer_2_W, b=HL_layer_2_b, activation=T.nnet.relu)
-    HL_layer_2_output = dropout_layer(srng, HL_layer_2.output, drop_p, train_flag)
+    HL_layer_2=HiddenLayer(rng, input=HL_layer_1.output, n_in=hidden_size, n_out=hidden_size, W=HL_layer_2_W, b=HL_layer_2_b, activation=T.nnet.relu)
+#     HL_layer_2_output = dropout_layer(srng, HL_layer_2.output, drop_p, train_flag)
 
-    LR_input = T.concatenate([HL_input, HL_layer_1_output, HL_layer_2_output], axis=1)
+    LR_input = T.concatenate([HL_input, HL_layer_1.output, HL_layer_2.output], axis=1)
+#     drop_LR_input = dropout_layer(srng, LR_input, drop_p, train_flag)
     LR_input_size = HL_input_size+2*hidden_size
 
 
@@ -148,10 +210,14 @@ def evaluate_lenet5(learning_rate=0.01, n_epochs=100, L2_weight=0.001, drop_p=0.
     loss=layer_LR.negative_log_likelihood(labels)  #for classification task, we usually used negative log likelihood as loss, the lower the better.
 
     params = [embeddings]+NN_para+HL_layer_1_params+HL_layer_2_params+LR_para   # put all model parameters together
-#     L2_reg =L2norm_paraList([embeddings,conv_W, U_a])
+    L2_reg =L2norm_paraList([embeddings,
+                             conv_W_2_pre,conv_W_2_gate,conv_W,conv_W_context,conv_W2,conv_W2_context,
+                             soft_att_W_big,soft_att_W_small,
+                             soft_att_W2_big,soft_att_W2_small,
+                             HL_layer_1_W,HL_layer_2_W,U_a])
 #     diversify_reg= Diversify_Reg(U_a.T)+Diversify_Reg(conv_W_into_matrix)
 
-    cost=loss#+Div_reg*diversify_reg#+L2_weight*L2_reg
+    cost=loss#+L2_weight*L2_reg
 
     grads = T.grad(cost, params)    # create a list of gradients for all model parameters
 
